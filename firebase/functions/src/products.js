@@ -1,0 +1,370 @@
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const admin = require("firebase-admin");
+
+const db = admin.firestore();
+const PRODUCTS = "products";
+
+// Verify the caller is an admin with product permissions
+async function verifyProductAdmin(auth) {
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const adminDoc = await db.collection("admins").doc(auth.uid).get();
+  if (!adminDoc.exists || !adminDoc.data().isActive) {
+    throw new HttpsError("permission-denied", "Admin access required.");
+  }
+  const data = adminDoc.data();
+  if (data.role !== "super_admin" && !data.permissions?.manageProducts) {
+    throw new HttpsError("permission-denied", "Product management permission required.");
+  }
+  return data;
+}
+
+/**
+ * Create a new product
+ */
+exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
+  await verifyProductAdmin(request.auth);
+
+  const data = request.data;
+
+  if (!data.name || !data.category || !data.productCode) {
+    throw new HttpsError("invalid-argument", "name, category, and productCode are required.");
+  }
+
+  // Check for duplicate productCode
+  const existing = await db.collection(PRODUCTS)
+    .where("productCode", "==", data.productCode)
+    .limit(1)
+    .get();
+
+  if (!existing.empty) {
+    throw new HttpsError("already-exists", `Product code ${data.productCode} already exists.`);
+  }
+
+  // Calculate initial price
+  const pricing = await calculatePricing(data);
+
+  const product = {
+    productCode: data.productCode,
+    name: data.name,
+    description: data.description || "",
+    category: data.category,
+    subCategory: data.subCategory || "",
+    images: data.images || [],
+    metal: data.metal || {},
+    diamond: data.diamond || { hasDiamond: false },
+    gemstones: data.gemstones || [],
+    dimensions: data.dimensions || {},
+    pricing: pricing,
+    certifications: data.certifications || {},
+    policies: data.policies || {
+      freeShipping: true,
+      cashOnDelivery: false,
+      tryAtHome: false,
+      freeReturns: true,
+      returnWindowDays: 30,
+      exchangeAllowed: true,
+      lifetimeExchange: true,
+      buybackAvailable: true,
+      resizable: data.category === "ring",
+      customizable: false,
+    },
+    collections: data.collections || [],
+    tags: data.tags || [],
+    inventory: data.inventory || {
+      inStock: true,
+      quantity: 1,
+      lowStockThreshold: 2,
+      preOrder: false,
+      estimatedDeliveryDays: 7,
+    },
+    featured: data.featured || false,
+    bestseller: data.bestseller || false,
+    newArrival: data.newArrival !== undefined ? data.newArrival : true,
+    displayOrder: data.displayOrder || 0,
+    createdBy: request.auth.uid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    isActive: true,
+    viewCount: 0,
+    purchaseCount: 0,
+  };
+
+  const docRef = await db.collection(PRODUCTS).add(product);
+
+  return { productId: docRef.id, message: "Product created successfully." };
+});
+
+/**
+ * Update an existing product
+ */
+exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
+  await verifyProductAdmin(request.auth);
+
+  const { productId, ...updateData } = request.data;
+
+  if (!productId) {
+    throw new HttpsError("invalid-argument", "productId is required.");
+  }
+
+  const productRef = db.collection(PRODUCTS).doc(productId);
+  const productDoc = await productRef.get();
+
+  if (!productDoc.exists) {
+    throw new HttpsError("not-found", "Product not found.");
+  }
+
+  // If metal/diamond/pricing fields changed, recalculate price
+  const existingData = productDoc.data();
+  const mergedData = { ...existingData, ...updateData };
+
+  if (updateData.metal || updateData.diamond || updateData.pricing) {
+    updateData.pricing = await calculatePricing(mergedData);
+  }
+
+  updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+  await productRef.update(updateData);
+
+  return { productId, message: "Product updated successfully." };
+});
+
+/**
+ * Soft delete a product (set isActive = false)
+ */
+exports.deleteProduct = onCall({ region: "asia-south1" }, async (request) => {
+  await verifyProductAdmin(request.auth);
+
+  const { productId } = request.data;
+  if (!productId) {
+    throw new HttpsError("invalid-argument", "productId is required.");
+  }
+
+  const productRef = db.collection(PRODUCTS).doc(productId);
+  const productDoc = await productRef.get();
+
+  if (!productDoc.exists) {
+    throw new HttpsError("not-found", "Product not found.");
+  }
+
+  await productRef.update({
+    isActive: false,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { productId, message: "Product deleted successfully." };
+});
+
+/**
+ * Get a single product by ID
+ */
+exports.getProduct = onCall({ region: "asia-south1" }, async (request) => {
+  const { productId } = request.data;
+  if (!productId) {
+    throw new HttpsError("invalid-argument", "productId is required.");
+  }
+
+  const productDoc = await db.collection(PRODUCTS).doc(productId).get();
+
+  if (!productDoc.exists) {
+    throw new HttpsError("not-found", "Product not found.");
+  }
+
+  const product = productDoc.data();
+
+  // Non-admins can only see active products
+  if (!product.isActive) {
+    if (!request.auth) {
+      throw new HttpsError("not-found", "Product not found.");
+    }
+    const adminDoc = await db.collection("admins").doc(request.auth.uid).get();
+    if (!adminDoc.exists || !adminDoc.data().isActive) {
+      throw new HttpsError("not-found", "Product not found.");
+    }
+  }
+
+  return { productId: productDoc.id, ...product };
+});
+
+/**
+ * List products with filters and pagination
+ */
+exports.listProducts = onCall({ region: "asia-south1" }, async (request) => {
+  const {
+    category,
+    subCategory,
+    minPrice,
+    maxPrice,
+    metalType,
+    featured,
+    bestseller,
+    newArrival,
+    collection,
+    tag,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    limit = 20,
+    startAfterDoc,
+  } = request.data || {};
+
+  let query = db.collection(PRODUCTS).where("isActive", "==", true);
+
+  if (category) query = query.where("category", "==", category);
+  if (subCategory) query = query.where("subCategory", "==", subCategory);
+  if (metalType) query = query.where("metal.type", "==", metalType);
+  if (featured) query = query.where("featured", "==", true);
+  if (bestseller) query = query.where("bestseller", "==", true);
+  if (newArrival) query = query.where("newArrival", "==", true);
+  if (collection) query = query.where("collections", "array-contains", collection);
+  if (tag) query = query.where("tags", "array-contains", tag);
+
+  // Sort
+  const validSortFields = ["createdAt", "pricing.finalPrice", "displayOrder", "purchaseCount"];
+  const field = validSortFields.includes(sortBy) ? sortBy : "createdAt";
+  query = query.orderBy(field, sortOrder === "asc" ? "asc" : "desc");
+
+  // Pagination
+  if (startAfterDoc) {
+    const lastDoc = await db.collection(PRODUCTS).doc(startAfterDoc).get();
+    if (lastDoc.exists) {
+      query = query.startAfter(lastDoc);
+    }
+  }
+
+  query = query.limit(Math.min(limit, 50));
+
+  const snapshot = await query.get();
+  const products = snapshot.docs.map((doc) => ({
+    productId: doc.id,
+    ...doc.data(),
+  }));
+
+  // Client-side price filtering (Firestore doesn't support range on calculated fields easily)
+  let filtered = products;
+  if (minPrice) {
+    filtered = filtered.filter((p) => (p.pricing?.finalPrice || 0) >= minPrice);
+  }
+  if (maxPrice) {
+    filtered = filtered.filter((p) => (p.pricing?.finalPrice || 0) <= maxPrice);
+  }
+
+  return {
+    products: filtered,
+    count: filtered.length,
+    lastDoc: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null,
+  };
+});
+
+/**
+ * Calculate pricing based on current metal rates
+ */
+async function calculatePricing(productData) {
+  const ratesDoc = await db.collection("metalRates").doc("current").get();
+  const taxDoc = await db.collection("taxSettings").doc("current").get();
+
+  const rates = ratesDoc.exists ? ratesDoc.data() : {};
+  const taxSettings = taxDoc.exists ? taxDoc.data() : { gst: { jewelry: 3 } };
+
+  const metal = productData.metal || {};
+  const diamond = productData.diamond || {};
+  const pricing = productData.pricing || {};
+
+  // Calculate metal value
+  let metalValue = 0;
+  let ratePerGram = 0;
+
+  if (metal.type === "gold" && metal.purity && rates.gold) {
+    ratePerGram = rates.gold[metal.purity] || 0;
+    metalValue = (metal.netWeight || 0) * ratePerGram;
+  } else if (metal.type === "silver" && metal.silverType && rates.silver) {
+    ratePerGram = rates.silver[metal.silverType] || 0;
+    metalValue = (metal.netWeight || 0) * ratePerGram;
+  } else if (metal.type === "platinum" && rates.platinum) {
+    ratePerGram = rates.platinum.perGram || 0;
+    metalValue = (metal.netWeight || 0) * ratePerGram;
+  }
+
+  // Calculate diamond value
+  let diamondValue = 0;
+  let diamondRatePerCarat = 0;
+
+  if (diamond.hasDiamond && diamond.totalCaratWeight && rates.diamond) {
+    // Map clarity and color to rate key
+    const clarityMap = { FL: "IF", IF: "IF", VVS1: "VVS", VVS2: "VVS", VS1: "VS", VS2: "VS", SI1: "SI", SI2: "SI" };
+    const colorMap = { D: "DEF", E: "DEF", F: "DEF", G: "GH", H: "GH", I: "IJ", J: "IJ" };
+
+    const clarityKey = clarityMap[diamond.clarity] || "SI";
+    const colorKey = colorMap[diamond.color] || "IJ";
+    const rateKey = `${clarityKey}_${colorKey}`;
+
+    diamondRatePerCarat = rates.diamond[rateKey] || rates.diamond["SI_IJ"] || 25000;
+    diamondValue = diamond.totalCaratWeight * diamondRatePerCarat;
+  }
+
+  // Calculate gemstone value
+  let gemstoneValue = 0;
+  if (productData.gemstones && productData.gemstones.length > 0) {
+    gemstoneValue = pricing.gemstoneValue || 0; // Gemstone prices set manually
+  }
+
+  // Calculate making charges
+  let makingChargeAmount = 0;
+  const mcType = pricing.makingChargeType || "percentage";
+  const mcValue = pricing.makingChargeValue || 0;
+
+  if (mcType === "percentage") {
+    makingChargeAmount = metalValue * (mcValue / 100);
+  } else if (mcType === "flat_per_gram") {
+    makingChargeAmount = (metal.netWeight || 0) * mcValue;
+  } else if (mcType === "fixed_amount") {
+    makingChargeAmount = mcValue;
+  }
+
+  // Calculate wastage charges
+  let wastageChargeAmount = 0;
+  const wcType = pricing.wastageChargeType || "percentage";
+  const wcValue = pricing.wastageChargeValue || 0;
+
+  if (wcType === "percentage") {
+    wastageChargeAmount = metalValue * (wcValue / 100);
+  } else {
+    wastageChargeAmount = wcValue;
+  }
+
+  const stoneSettingCharges = pricing.stoneSettingCharges || 0;
+  const designCharges = pricing.designCharges || 0;
+
+  const subtotal = metalValue + diamondValue + gemstoneValue +
+    makingChargeAmount + wastageChargeAmount + stoneSettingCharges + designCharges;
+
+  const discount = pricing.discount || 0;
+  const taxRate = taxSettings.gst?.jewelry || 3;
+  const taxableAmount = subtotal - discount;
+  const taxAmount = taxableAmount * (taxRate / 100);
+  const finalPrice = Math.round(taxableAmount + taxAmount);
+
+  return {
+    goldRatePerGram: metal.type === "gold" ? ratePerGram : 0,
+    silverRatePerGram: metal.type === "silver" ? ratePerGram : 0,
+    diamondRatePerCarat,
+    makingChargeType: mcType,
+    makingChargeValue: mcValue,
+    makingChargeAmount: Math.round(makingChargeAmount),
+    wastageChargeType: wcType,
+    wastageChargeValue: wcValue,
+    wastageChargeAmount: Math.round(wastageChargeAmount),
+    stoneSettingCharges,
+    designCharges,
+    metalValue: Math.round(metalValue),
+    diamondValue: Math.round(diamondValue),
+    gemstoneValue,
+    subtotal: Math.round(subtotal),
+    discount,
+    taxRate,
+    taxAmount: Math.round(taxAmount),
+    finalPrice,
+    mrp: pricing.mrp || finalPrice,
+    sellingPrice: finalPrice,
+  };
+}

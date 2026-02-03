@@ -5,9 +5,11 @@
 
 # Firebase
 firebase-debug.log
+firebase-debug.*.log
 .firebase/
 google-services.json
 GoogleService-Info.plist
+**/serviceAccountKey.json
 
 # Dependencies
 node_modules/

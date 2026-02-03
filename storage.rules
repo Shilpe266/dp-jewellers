@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Max file size: 5MB for images
+    function isImageType() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isUnder5MB() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check admin status via custom claims (set by Cloud Functions)
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    // ============================================
+    // PRODUCT IMAGES
+    // ============================================
+    match /products/{allPaths=**} {
+      // Anyone can view product images
+      allow read: if true;
+
+      // Only admins can upload/delete product images
+      allow write: if isAdmin() && isImageType() && isUnder5MB();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // BANNER IMAGES
+    // ============================================
+    match /banners/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImageType() && isUnder5MB();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // STORE IMAGES
+    // ============================================
+    match /stores/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImageType() && isUnder5MB();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // COLLECTION IMAGES
+    // ============================================
+    match /collections/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isImageType() && isUnder5MB();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // CERTIFICATE FILES (PDFs and images)
+    // ============================================
+    match /certificates/{allPaths=**} {
+      // Authenticated users can view certificates
+      allow read: if isAuthenticated();
+
+      // Only admins can upload certificates
+      allow write: if isAdmin() &&
+        (request.resource.contentType.matches('image/.*') ||
+         request.resource.contentType == 'application/pdf') &&
+        request.resource.size < 10 * 1024 * 1024;
+      allow delete: if isAdmin();
+    }
+
+    // Deny everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

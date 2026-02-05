@@ -1,63 +1,94 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, Platform } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, Platform, ActivityIndicator } from 'react-native'
+import React, { useEffect, useRef, useState } from 'react'
 import { Colors, Fonts, Sizes, Screen, CommomStyles } from '../../constants/styles'
 import CollapsibleToolbar from 'react-native-collapsible-toolbar';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
-import { FlatListSlider } from 'react-native-flatlist-slider';
 import { Snackbar } from 'react-native-paper';
 import MyStatusBar from '../../components/myStatusBar';
-import { useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../lib/firebase';
 
-const productColors = [
-    {
-        id: '1',
-        color: '#F7D000',
-    },
-    {
-        id: '2',
-        color: '#DCDCDE',
-    },
-];
-const productSizes = ['46', '48', '50', '52', '56', '58', '60',];
-
-const productDescriptions = [
-    'Lorem ipsum dolor sit amet, consectetur adipiscingelit. Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-    'Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-    'Lorem ipsum dolor sit amet, consectetur adipiscingelit. Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-    'Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-];
+const fallbackImage = require('../../assets/images/jewellery/jewellary15.png');
 
 const ProductDetailScreen = () => {
 
     const navigation = useNavigation();
+    const { productId } = useLocalSearchParams();
 
-    const [selectedColorId, setselectedColorId] = useState(productColors[1].id);
     const [selectedSize, setselectedSize] = useState('');
     const [isFavorite, setisFavorite] = useState(false);
     const [showSnackBar, setshowSnackBar] = useState(false);
+    const [snackText, setsnackText] = useState('');
+    const [product, setproduct] = useState(null);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+    const [activeIndex, setactiveIndex] = useState(0);
+    const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 60 });
+    const onViewRef = useRef(({ viewableItems }) => {
+        if (viewableItems && viewableItems.length > 0) {
+            setactiveIndex(viewableItems[0].index || 0);
+        }
+    });
 
-    const images = [
-        { image: require('../../assets/images/jewellery/jewellary15.png') },
-        { image: require('../../assets/images/jewellery/jewellary15.png') },
-        { image: require('../../assets/images/jewellery/jewellary15.png') },
-        { image: require('../../assets/images/jewellery/jewellary15.png') }
-    ];
+    useEffect(() => {
+        let active = true;
+        const fetchProduct = async () => {
+            if (!productId) {
+                seterrorText('Product not found.');
+                setloading(false);
+                return;
+            }
+            setloading(true);
+            seterrorText('');
+            try {
+                const getProduct = httpsCallable(functions, 'getProduct');
+                const res = await getProduct({ productId });
+                if (active) {
+                    setproduct(res.data);
+                    if (res.data?.sizes?.length) {
+                        setselectedSize(res.data.sizes[0]);
+                    }
+                }
+            } catch (err) {
+                if (active) {
+                    seterrorText('Failed to load product.');
+                }
+            } finally {
+                if (active) setloading(false);
+            }
+        };
+        fetchProduct();
+        return () => { active = false; };
+    }, [productId]);
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <MyStatusBar />
             <View style={{ flex: 1 }}>
-                <CollapsibleToolbar
-                    renderContent={pageContent}
-                    renderNavBar={header}
-                    renderToolBar={productImage}
-                    collapsedNavBarBackgroundColor={Colors.whiteColor}
-                    translucentStatusBar={false}
-                    toolBarHeight={Screen.height / 2.8}
-                    showsVerticalScrollIndicator={false}
-                />
-                {addToCartButton()}
-                {snackBar()}
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : (
+                    <>
+                        <CollapsibleToolbar
+                            renderContent={pageContent}
+                            renderNavBar={header}
+                            renderToolBar={productImage}
+                            collapsedNavBarBackgroundColor={Colors.whiteColor}
+                            translucentStatusBar={false}
+                            toolBarHeight={Screen.height / 2.8}
+                            showsVerticalScrollIndicator={false}
+                        />
+                        {addToCartButton()}
+                        {snackBar()}
+                    </>
+                )}
             </View>
         </View>
     )
@@ -71,7 +102,7 @@ const ProductDetailScreen = () => {
                 style={CommomStyles.snackBarStyle}
             >
                 <Text style={{ ...Fonts.whiteColor16Medium }}>
-                    {isFavorite ? 'Added To Favorite' : 'Removed From Favorite'}
+                    {snackText}
                 </Text>
             </Snackbar>
         )
@@ -81,7 +112,7 @@ const ProductDetailScreen = () => {
         return (
             <TouchableOpacity
                 activeOpacity={0.5}
-                onPress={() => { navigation.navigate('(tabs)', { screen: 'cart/cartScreen' }) }}
+                onPress={handleAddToCart}
                 style={CommomStyles.buttonStyle}
             >
                 <Text style={{ ...Fonts.whiteColor19Medium }}>
@@ -92,33 +123,41 @@ const ProductDetailScreen = () => {
     }
 
     function productImage() {
-        const ImageView = ({ item }) => {
-            return (
-                <View style={{ width: Screen.width }}>
-                    <Image
-                        source={item.image}
-                        style={styles.productImageStyle}
-                    />
-                </View>
-            );
-        };
+        const imageList = (product?.images || []).map((img) => ({
+            image: img?.url || img,
+        }));
+        const finalImages = imageList.length ? imageList : [{ image: fallbackImage }];
+        const isRemote = imageList.length > 0;
         return (
             <View style={{ height: Screen.height / 2.8 }}>
-                <FlatListSlider
-                    data={images}
-                    height={Screen.height / 3.8}
-                    indicatorContainerStyle={{ position: 'absolute', bottom: -40 }}
-                    indicatorActiveColor={Colors.lightGrayColor}
-                    indicatorInActiveColor={'#F0F0F0'}
-                    indicatorStyle={{ ...styles.dotStyle }}
-                    indicatorActiveWidth={10}
-                    animation
-                    onPress={item => { }}
-                    autoscroll={true}
-                    timer={4000}
-                    local={true}
-                    component={<ImageView />}
+                <FlatList
+                    data={finalImages}
+                    keyExtractor={(_, index) => `${index}`}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    onViewableItemsChanged={onViewRef.current}
+                    viewabilityConfig={viewConfigRef.current}
+                    renderItem={({ item }) => (
+                        <View style={{ width: Screen.width }}>
+                            <Image
+                                source={isRemote ? { uri: item.image } : item.image}
+                                style={styles.productImageStyle}
+                            />
+                        </View>
+                    )}
                 />
+                <View style={styles.dotsWrap}>
+                    {finalImages.map((_, idx) => (
+                        <View
+                            key={`${idx}`}
+                            style={[
+                                styles.dotStyle,
+                                idx === activeIndex ? styles.dotActive : styles.dotInactive,
+                            ]}
+                        />
+                    ))}
+                </View>
             </View>
         )
     }
@@ -128,7 +167,6 @@ const ProductDetailScreen = () => {
             <View style={{ flex: 1, }}>
                 {divider()}
                 {productNameAndPriceInfo()}
-                {productColorInfo()}
                 {productSizeInfo()}
                 {productDescriptionInfo()}
             </View>
@@ -136,26 +174,22 @@ const ProductDetailScreen = () => {
     }
 
     function productDescriptionInfo() {
+        const description = product?.description || '';
         return (
             <View style={{ margin: Sizes.fixPadding * 2.0 }}>
                 <Text style={{ ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding }}>
                     Description
                 </Text>
-                {
-                    productDescriptions.map((item, index) => (
-                        <Text
-                            key={`${index}`}
-                            style={{ ...Fonts.grayColor15Regular, lineHeight: 23.0, marginBottom: Sizes.fixPadding - 5.0 }}
-                        >
-                            {item}
-                        </Text>
-                    ))
-                }
+                <Text style={{ ...Fonts.grayColor15Regular, lineHeight: 23.0 }}>
+                    {description || 'No description available.'}
+                </Text>
             </View>
         )
     }
 
     function productSizeInfo() {
+        const sizes = product?.sizes || [];
+        if (!sizes.length) return null;
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.8}
@@ -175,7 +209,7 @@ const ProductDetailScreen = () => {
                     Size
                 </Text>
                 <FlatList
-                    data={productSizes}
+                    data={sizes}
                     keyExtrator={(item, index) => { `${item}${index}` }}
                     renderItem={renderItem}
                     horizontal
@@ -186,55 +220,19 @@ const ProductDetailScreen = () => {
         )
     }
 
-    function productColorInfo() {
-        return (
-            <View style={{ flexDirection: 'row', marginHorizontal: Sizes.fixPadding * 2.0, marginBottom: Sizes.fixPadding * 2.0 }}>
-                <View style={{ flex: 1, flexDirection: 'row' }}>
-                    <Text style={{ ...Fonts.blackColor16Medium }}>
-                        Color
-                    </Text>
-                    <View style={styles.productColorsWrapStyle}>
-                        {
-                            productColors.map((item) => (
-                                <TouchableOpacity
-                                    activeOpacity={0.5}
-                                    onPress={() => { setselectedColorId(item.id) }}
-                                    key={`${item.id}`}
-                                    style={{
-                                        ...styles.productColorCircleStyle,
-                                        backgroundColor: item.color,
-                                        borderWidth: selectedColorId == item.id ? 1.5 : 0.0,
-                                        elevation: selectedColorId == item.id ? 3.0 : 0.0,
-                                        shadowOpacity: selectedColorId == item.id ? 0.2 : 0
-                                    }}>
-                                </TouchableOpacity>
-                            ))
-                        }
-                    </View>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' }}>
-                    <MaterialIcons name="star" size={18} color={Colors.primaryColor} />
-                    <Text style={{ ...Fonts.blackColor16Medium, marginLeft: Sizes.fixPadding - 5.0 }}>
-                        4.2 (350 reviews)
-                    </Text>
-                </View>
-            </View>
-        )
-    }
-
     function productNameAndPriceInfo() {
         return (
             <View style={{ flexDirection: 'row', margin: Sizes.fixPadding * 2.0, }}>
                 <View style={{ flex: 1, marginRight: Sizes.fixPadding }}>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor18Medium }}>
-                        Attract Ring Round Silver Plated
+                        {product?.name || 'Product'}
                     </Text>
                     <Text style={{ ...Fonts.grayColor13Medium }}>
-                        GIVA RINGS
+                        {product?.category || ''}
                     </Text>
                 </View>
                 <Text style={{ ...Fonts.primaryColor18Bold }}>
-                    $120.00
+                    {`₹`}{Number(product?.pricing?.finalPrice || 0).toFixed(2)}
                 </Text>
             </View>
         )
@@ -261,12 +259,43 @@ const ProductDetailScreen = () => {
                         size={23}
                         color={Colors.blackColor}
                         style={{ marginRight: Sizes.fixPadding * 2.0 }}
-                        onPress={() => { setshowSnackBar(true), setisFavorite(!isFavorite) }}
+                        onPress={toggleFavorite}
                     />
                     <Feather name="share-2" size={20} color={Colors.blackColor} />
                 </View>
             </View>
         )
+    }
+
+    async function handleAddToCart() {
+        try {
+            const updateCart = httpsCallable(functions, 'updateCart');
+            await updateCart({
+                action: 'add',
+                productId,
+                size: selectedSize || null,
+                quantity: 1,
+            });
+            setsnackText('Added to cart');
+            setshowSnackBar(true);
+        } catch (err) {
+            setsnackText('Failed to add to cart');
+            setshowSnackBar(true);
+        }
+    }
+
+    async function toggleFavorite() {
+        try {
+            const updateFavorites = httpsCallable(functions, 'updateFavorites');
+            const action = isFavorite ? 'remove' : 'add';
+            await updateFavorites({ action, productId });
+            setisFavorite(!isFavorite);
+            setsnackText(isFavorite ? 'Removed from favorite' : 'Added to favorite');
+            setshowSnackBar(true);
+        } catch (err) {
+            setsnackText('Failed to update favorite');
+            setshowSnackBar(true);
+        }
     }
 }
 
@@ -280,35 +309,30 @@ const styles = StyleSheet.create({
         marginHorizontal: Sizes.fixPadding * 2.0,
         marginTop: Platform.OS == 'ios' ? 0 : Sizes.fixPadding + 10.0
     },
+    dotsWrap: {
+        position: 'absolute',
+        bottom: Sizes.fixPadding,
+        width: '100%',
+        flexDirection: 'row',
+        justifyContent: 'center',
+    },
     dotStyle: {
-        marginHorizontal: Sizes.fixPadding - 5.0,
-        width: 10.0,
-        height: 10.0,
-        borderRadius: 2.0,
+        marginHorizontal: 4,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    dotActive: {
+        backgroundColor: Colors.lightGrayColor,
+    },
+    dotInactive: {
+        backgroundColor: '#F0F0F0',
     },
     productImageStyle: {
         width: Screen.width / 1.8,
         height: Screen.height / 3.8,
         resizeMode: 'contain',
         alignSelf: 'center',
-    },
-    productColorCircleStyle: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 24.0,
-        height: 24.0,
-        borderRadius: 12.0,
-        marginHorizontal: Sizes.fixPadding - 3.0,
-        marginTop: Sizes.fixPadding - 5.0,
-        borderColor: Colors.whiteColor,
-        shadowColor: Colors.blackColor,
-        shadowOffset: { width: 0, height: 0 }
-    },
-    productColorsWrapStyle: {
-        flex: 1,
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginLeft: Sizes.fixPadding - 3.0
     },
     productSizeBoxStyle: {
         borderColor: Colors.offWhiteColor,
@@ -317,5 +341,14 @@ const styles = StyleSheet.create({
         paddingVertical: Sizes.fixPadding - 7.0,
         marginHorizontal: Sizes.fixPadding - 3.0,
         borderRadius: Sizes.fixPadding - 5.0,
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
     },
 })

@@ -4,121 +4,31 @@ import { Colors, CommomStyles, Fonts, Sizes } from '../../constants/styles'
 import { MaterialIcons } from '@expo/vector-icons';
 import RangeSlider from 'rn-range-slider';
 import MyStatusBar from '../../components/myStatusBar';
-import { useNavigation } from 'expo-router';
-
-const featuresList = [
-    {
-        id: '1',
-        filter: 'Below 25mm',
-        selected: false,
-    },
-    {
-        id: '2',
-        filter: 'Between 25-35mm',
-        selected: false,
-    },
-    {
-        id: '3',
-        filter: '35mm and above',
-        selected: true,
-    },
-    {
-        id: '4',
-        filter: 'Plugs',
-        selected: false,
-    },
-    {
-        id: '5',
-        filter: 'Tunnels',
-        selected: false,
-    }
-];
-
-const brandsList = [
-    {
-        id: '1',
-        brand: 'Sukkhi',
-        selected: false,
-    },
-    {
-        id: '2',
-        brand: 'YouBella',
-        selected: false,
-    },
-    {
-        id: '3',
-        brand: 'Peora',
-        selected: true,
-    },
-    {
-        id: '4',
-        brand: 'Zaveri Pearls',
-        selected: false,
-    },
-    {
-        id: '5',
-        brand: 'Zeneme',
-        selected: false,
-    },
-    {
-        id: '6',
-        brand: 'Karatcart',
-        selected: false,
-    },
-    {
-        id: '7',
-        brand: 'Mansiyaorange',
-        selected: false,
-    },
-    {
-        id: '8',
-        brand: 'Lucky Jewellery',
-        selected: false,
-    },
-];
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 
 const materialsList = [
-    {
-        id: '1',
-        material: 'Brass',
-        selected: false,
-    },
-    {
-        id: '2',
-        material: 'Yello Gold',
-        selected: false,
-    },
-    {
-        id: '3',
-        material: 'Rose Gold',
-        selected: true,
-    },
-    {
-        id: '4',
-        material: 'Silver',
-        selected: false,
-    },
-    {
-        id: '5',
-        material: 'Platinum',
-        selected: false,
-    },
-    {
-        id: '6',
-        material: 'White Gold',
-        selected: false,
-    },
+    { id: '1', material: 'gold', label: 'Gold' },
+    { id: '2', material: 'silver', label: 'Silver' },
+    { id: '3', material: 'platinum', label: 'Platinum' },
 ];
 
 const FilterScreen = () => {
 
     const navigation = useNavigation();
+    const params = useLocalSearchParams();
 
-    const [features, setfeatures] = useState(featuresList);
-    const [brands, setbrands] = useState(brandsList);
-    const [materials, setmaterials] = useState(materialsList);
+    const [selectedMaterial, setselectedMaterial] = useState('');
     const [lowRange, setlowRange] = useState(0);
-    const [highRange, sethighRange] = useState(120);
+    const [highRange, sethighRange] = useState(200);
+
+    React.useEffect(() => {
+        const material = params?.material ? String(params.material) : '';
+        const minPrice = params?.minPrice ? Number(params.minPrice) : 0;
+        const maxPrice = params?.maxPrice ? Number(params.maxPrice) : 200;
+        setselectedMaterial(material);
+        setlowRange(isNaN(minPrice) ? 0 : minPrice);
+        sethighRange(isNaN(maxPrice) ? 200 : maxPrice);
+    }, [params?.material, params?.minPrice, params?.maxPrice]);
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
@@ -126,8 +36,6 @@ const FilterScreen = () => {
             <View style={{ flex: 1 }}>
                 {header()}
                 <ScrollView automaticallyAdjustKeyboardInsets={true} showsVerticalScrollIndicator={false}>
-                    {featuresInfo()}
-                    {brandInfo()}
                     {materialInfo()}
                     {priceRangeInfo()}
                 </ScrollView>
@@ -140,7 +48,13 @@ const FilterScreen = () => {
         return (
             <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => { navigation.pop() }}
+                onPress={() => {
+                    navigation.navigate('search/searchScreen', {
+                        material: selectedMaterial,
+                        minPrice: lowRange,
+                        maxPrice: highRange,
+                    })
+                }}
                 style={{ ...CommomStyles.buttonStyle }}
             >
                 <Text style={{ ...Fonts.whiteColor19Medium }}>
@@ -167,9 +81,10 @@ const FilterScreen = () => {
                 <RangeSlider
                     style={{ marginVertical: Sizes.fixPadding }}
                     min={0}
-                    max={200}
+                    max={500000}
                     step={1}
                     high={highRange}
+                    low={lowRange}
                     renderThumb={renderThumb}
                     renderRail={renderRail}
                     renderRailSelected={renderRailSelected}
@@ -178,27 +93,14 @@ const FilterScreen = () => {
                 />
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={{ ...Fonts.grayColor15Regular }}>
-                        {`$`}{lowRange.toFixed(2)}
+                        {`₹`}{Number(lowRange).toFixed(0)}
                     </Text>
                     <Text style={{ ...Fonts.grayColor15Regular }}>
-                        {`$`}{highRange.toFixed(2)}
+                        {`₹`}{Number(highRange).toFixed(0)}
                     </Text>
                 </View>
             </View>
         )
-    }
-
-    function changeMaterials({ id }) {
-        const copyMaterials = materials;
-        const newMaterials = copyMaterials.map((item) => {
-            if (item.id == id) {
-                return { ...item, selected: !item.selected }
-            }
-            else {
-                return item
-            }
-        })
-        setmaterials(newMaterials);
     }
 
     function materialInfo() {
@@ -209,102 +111,20 @@ const FilterScreen = () => {
                 </Text>
                 <View style={{ marginHorizontal: Sizes.fixPadding + 5.0, flexDirection: 'row', flexWrap: 'wrap' }}>
                     {
-                        materials.map((item) => (
+                        materialsList.map((item) => (
                             <TouchableOpacity
                                 activeOpacity={0.8}
-                                onPress={() => { changeMaterials({ id: item.id }) }}
+                                onPress={() => {
+                                    setselectedMaterial(selectedMaterial === item.material ? '' : item.material)
+                                }}
                                 key={`${item.id}`}
                                 style={{
                                     ...styles.searchesWrapStyle,
-                                    backgroundColor: item.selected ? Colors.blackColor : 'transparent'
+                                    backgroundColor: selectedMaterial === item.material ? Colors.blackColor : 'transparent'
                                 }}
                             >
-                                <Text style={item.selected ? { ...Fonts.whiteColor15Regular } : { ...Fonts.blackColor15Regular }}>
-                                    {item.material}
-                                </Text>
-                            </TouchableOpacity>
-                        ))
-                    }
-                </View>
-            </View>
-        )
-    }
-
-    function changeBrand({ id }) {
-        const copyBrands = brands;
-        const newBrands = copyBrands.map((item) => {
-            if (item.id == id) {
-                return { ...item, selected: !item.selected }
-            }
-            else {
-                return item
-            }
-        })
-        setbrands(newBrands);
-    }
-
-    function brandInfo() {
-        return (
-            <View>
-                <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, ...Fonts.primaryColor14Medium, marginBottom: Sizes.fixPadding }}>
-                    BRAND
-                </Text>
-                <View style={{ marginHorizontal: Sizes.fixPadding + 5.0, flexDirection: 'row', flexWrap: 'wrap' }}>
-                    {
-                        brands.map((item) => (
-                            <TouchableOpacity
-                                activeOpacity={0.8}
-                                onPress={() => { changeBrand({ id: item.id }) }}
-                                key={`${item.id}`}
-                                style={{
-                                    ...styles.searchesWrapStyle,
-                                    backgroundColor: item.selected ? Colors.blackColor : 'transparent'
-                                }}
-                            >
-                                <Text style={item.selected ? { ...Fonts.whiteColor15Regular } : { ...Fonts.blackColor15Regular }}>
-                                    {item.brand}
-                                </Text>
-                            </TouchableOpacity>
-                        ))
-                    }
-                </View>
-            </View>
-        )
-    }
-
-    function changeFeatures({ id }) {
-        const copyFeatures = features;
-        const newFeatures = copyFeatures.map((item) => {
-            if (item.id == id) {
-                return { ...item, selected: !item.selected }
-            }
-            else {
-                return item
-            }
-        })
-        setfeatures(newFeatures);
-    }
-
-    function featuresInfo() {
-        return (
-            <View style={{ marginVertical: Sizes.fixPadding * 2.0, }}>
-                <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, ...Fonts.primaryColor14Medium, marginBottom: Sizes.fixPadding }}>
-                    FEATURES
-                </Text>
-                <View style={{ marginHorizontal: Sizes.fixPadding + 5.0, flexDirection: 'row', flexWrap: 'wrap' }}>
-                    {
-                        features.map((item) => (
-                            <TouchableOpacity
-                                activeOpacity={0.8}
-                                onPress={() => { changeFeatures({ id: item.id }) }}
-                                key={`${item.id}`}
-                                style={{
-                                    ...styles.searchesWrapStyle,
-                                    backgroundColor: item.selected ? Colors.blackColor : 'transparent'
-                                }}
-                            >
-                                <Text style={item.selected ? { ...Fonts.whiteColor15Regular } : { ...Fonts.blackColor15Regular }}>
-                                    {item.filter}
+                                <Text style={selectedMaterial === item.material ? { ...Fonts.whiteColor15Regular } : { ...Fonts.blackColor15Regular }}>
+                                    {item.label}
                                 </Text>
                             </TouchableOpacity>
                         ))

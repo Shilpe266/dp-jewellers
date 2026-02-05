@@ -1,8 +1,10 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ImageBackground } from 'react-native'
-import React from 'react'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ImageBackground, ActivityIndicator } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, Fonts, Sizes, Screen } from '../../../constants/styles'
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useNavigation } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../lib/firebase';
 
 const bannersList = [
     {
@@ -17,158 +19,66 @@ const bannersList = [
     },
 ];
 
-const categoryList = [
-    {
-        id: '1',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Rings',
-    },
-    {
-        id: '2',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary2.png'),
-        jewellaryName: 'Bracelets',
-    },
-    {
-        id: '3',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary3.png'),
-        jewellaryName: 'Earrings ',
-    },
-    {
-        id: '4',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary4.png'),
-        jewellaryName: 'Necklace',
-    },
-    {
-        id: '5',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Rings',
-    },
-    {
-        id: '6',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary2.png'),
-        jewellaryName: 'Bracelets',
-    },
-    {
-        id: '7',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary3.png'),
-        jewellaryName: 'Earrings ',
-    },
-    {
-        id: '8',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary4.png'),
-        jewellaryName: 'Necklace',
-    },
-];
-
-const recommendedList = [
-    {
-        id: '1',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Silver Plated Ring',
-        amount: 100.00,
-    },
-    {
-        id: '2',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary5.png'),
-        jewellaryName: 'Diamond Earrings',
-        amount: 149.50,
-    },
-    {
-        id: '3',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary6.png'),
-        jewellaryName: 'Sunshine Ring',
-        amount: 299.50,
-    },
-    {
-        id: '4',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary7.png'),
-        jewellaryName: 'Diamond Bracelet',
-        amount: 249.50,
-    },
-    {
-        id: '5',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary8.png'),
-        jewellaryName: 'Silver Earrings',
-        amount: 120.00,
-    },
-    {
-        id: '6',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary9.png'),
-        jewellaryName: 'Necklace',
-        amount: 150.50,
-    },
-];
-
-const popularItemList = [
-    {
-        id: '1',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary6.png'),
-        jewellaryName: 'Sunshine Ring',
-        amount: 299.50,
-    },
-    {
-        id: '2',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary4.png'),
-        jewellaryName: 'Necklace',
-        amount: 150.50,
-    },
-    {
-        id: '3',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary7.png'),
-        jewellaryName: 'Bracelet',
-        amount: 199.50,
-    },
-    {
-        id: '4',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary10.png'),
-        jewellaryName: 'Silver Ring',
-        amount: 100.00,
-    },
-    {
-        id: '5',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary3.png'),
-        jewellaryName: 'Silver Earrings',
-        amount: 120.00,
-    },
-    {
-        id: '6',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary9.png'),
-        jewellaryName: 'Necklace',
-        amount: 150.50,
-    },
-    {
-        id: '7',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary2.png'),
-        jewellaryName: 'Bracelet',
-        amount: 199.50,
-    },
-    {
-        id: '8',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary11.png'),
-        jewellaryName: 'Silver Ring',
-        amount: 100.00,
-    },
-];
+const placeholderImage = require('../../../assets/images/jewellery/jewellary1.png');
 
 const HomeScreen = () => {
 
     const navigation = useNavigation();
+    const [categories, setcategories] = useState([]);
+    const [featured, setfeatured] = useState([]);
+    const [popular, setpopular] = useState([]);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+
+    useEffect(() => {
+        let active = true;
+        const fetchHomeData = async () => {
+            setloading(true);
+            seterrorText('');
+            try {
+                const getHomePageData = httpsCallable(functions, 'getHomePageData');
+                const res = await getHomePageData();
+                if (!active) return;
+                setcategories(res?.data?.categories || []);
+                setfeatured(res?.data?.featured || []);
+                setpopular(res?.data?.popular || []);
+            } catch (err) {
+                if (active) {
+                    seterrorText('Failed to load home data.');
+                }
+            } finally {
+                if (active) setloading(false);
+            }
+        };
+        fetchHomeData();
+        return () => { active = false; };
+    }, []);
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <View style={{ flex: 1 }}>
                 {header()}
-                <FlatList
-                    ListHeaderComponent={
-                        <>
-                            {banners()}
-                            {categoryInfo()}
-                            {recommendedInfo()}
-                            {popularInfo()}
-                        </>
-                    }
-                    showsVerticalScrollIndicator={false}
-                />
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : (
+                    <FlatList
+                        ListHeaderComponent={
+                            <>
+                                {banners()}
+                                {categoryInfo()}
+                                {recommendedInfo()}
+                                {popularInfo()}
+                            </>
+                        }
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
             </View>
         </View>
     )
@@ -177,20 +87,20 @@ const HomeScreen = () => {
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.5}
-                onPress={() => { navigation.push('productDetail/productDetailScreen') }}
+                onPress={() => { navigation.push('productDetail/productDetailScreen', { productId: item.productId }) }}
                 style={{ flex: 1, marginBottom: Sizes.fixPadding * 2.0, ...styles.recommendedAndPopularItemWrapStyle, }}
             >
                 <Image
-                    source={item.jewellaryImage}
+                    source={item.image ? { uri: item.image } : placeholderImage}
                     style={styles.recommendedAndPopularImageStyle}
                 />
                 <View style={{ backgroundColor: Colors.offWhiteColor, height: 1.0, }} />
                 <View style={{ margin: Sizes.fixPadding + 5.0 }}>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16Regular }}>
-                        {item.jewellaryName}
+                        {item.name}
                     </Text>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16SemiBold }}>
-                        {`$`}{item.amount.toFixed(2)}
+                        {`₹`}{Number(item.finalPrice || 0).toFixed(2)}
                     </Text>
                 </View>
             </TouchableOpacity>
@@ -201,8 +111,8 @@ const HomeScreen = () => {
                     Popular
                 </Text>
                 <FlatList
-                    data={popularItemList}
-                    keyExtractor={(item) => `${item.id}`}
+                    data={popular}
+                    keyExtractor={(item) => `${item.productId}`}
                     renderItem={renderItem}
                     numColumns={2}
                     scrollEnabled={false}
@@ -215,20 +125,20 @@ const HomeScreen = () => {
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.5}
-                onPress={() => { navigation.push('productDetail/productDetailScreen') }}
+                onPress={() => { navigation.push('productDetail/productDetailScreen', { productId: item.productId }) }}
                 style={{ ...styles.recommendedAndPopularItemWrapStyle, width: Screen.width / 2.4, }}
             >
                 <Image
-                    source={item.jewellaryImage}
+                    source={item.image ? { uri: item.image } : placeholderImage}
                     style={styles.recommendedAndPopularImageStyle}
                 />
                 <View style={{ backgroundColor: Colors.offWhiteColor, height: 1.0, }} />
                 <View style={{ margin: Sizes.fixPadding + 5.0 }}>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16Regular }}>
-                        {item.jewellaryName}
+                        {item.name}
                     </Text>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16SemiBold }}>
-                        {`$`}{item.amount.toFixed(2)}
+                        {`₹`}{Number(item.finalPrice || 0).toFixed(2)}
                     </Text>
                 </View>
             </TouchableOpacity>
@@ -239,8 +149,8 @@ const HomeScreen = () => {
                     Recommended for You
                 </Text>
                 <FlatList
-                    data={recommendedList}
-                    keyExtractor={(item) => `${item.id}`}
+                    data={featured}
+                    keyExtractor={(item) => `${item.productId}`}
                     renderItem={renderItem}
                     horizontal
                     contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding + 3.0 }}
@@ -254,15 +164,15 @@ const HomeScreen = () => {
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.5}
-                onPress={() => { navigation.push('categoryWiseProducts/categoryWiseProductsScreen') }}
+                onPress={() => { navigation.push('categoryWiseProducts/categoryWiseProductsScreen', { category: item }) }}
                 style={styles.categoryWiseItemWrapStyle}
             >
                 <Image
-                    source={item.jewellaryImage}
+                    source={placeholderImage}
                     style={{ width: Screen.width / 4.5, height: Screen.width / 4.5, resizeMode: 'contain' }}
                 />
                 <Text numberOfLines={1} style={styles.categoryWiseJewellaryTextStyle}>
-                    {item.jewellaryName}
+                    {item}
                 </Text>
             </TouchableOpacity>
         )
@@ -272,8 +182,8 @@ const HomeScreen = () => {
                     Category
                 </Text>
                 <FlatList
-                    data={categoryList}
-                    keyExtractor={(item) => `${item.id}`}
+                    data={categories}
+                    keyExtractor={(item, index) => `${item}-${index}`}
                     renderItem={renderItem}
                     horizontal
                     contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding + 3.0 }}
@@ -390,5 +300,14 @@ const styles = StyleSheet.create({
         borderRadius: Sizes.fixPadding,
         marginHorizontal: Sizes.fixPadding,
         maxWidth: (Screen.width / 2.0) - 30
-    }
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
+    },
 })

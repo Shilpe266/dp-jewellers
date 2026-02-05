@@ -1,55 +1,59 @@
-import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, CommomStyles, Fonts, Screen, Sizes } from '../../../constants/styles'
 import { MaterialIcons } from '@expo/vector-icons';
 import { Snackbar } from 'react-native-paper';
 import { useNavigation } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../lib/firebase';
 
-const favoriteItemsList = [
-    {
-        id: '1',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Silver Plated Ring',
-        amount: 100.00,
-    },
-    {
-        id: '2',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary6.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 119.50,
-    },
-    {
-        id: '3',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary12.png'),
-        jewellaryName: 'Silver Ring',
-        amount: 120.50,
-    },
-    {
-        id: '4',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary10.png'),
-        jewellaryName: 'Silver Grace Ring',
-        amount: 125.25,
-    },
-];
+const placeholderImage = require('../../../assets/images/jewellery/jewellary1.png');
 
 const FavoriteScreen = () => {
 
     const navigation = useNavigation();
 
-    const [favorites, setfavorites] = useState(favoriteItemsList);
+    const [favorites, setfavorites] = useState([]);
     const [showSnackBar, setShowSnackBar] = useState(false);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+
+    useEffect(() => {
+        fetchFavorites();
+    }, []);
+
+    const fetchFavorites = async () => {
+        setloading(true);
+        seterrorText('');
+        try {
+            const getFavorites = httpsCallable(functions, 'getFavorites');
+            const res = await getFavorites();
+            setfavorites(res?.data?.favorites || []);
+        } catch (err) {
+            seterrorText('Failed to load favorites.');
+            setfavorites([]);
+        } finally {
+            setloading(false);
+        }
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <View style={{ flex: 1 }}>
                 {header()}
-                {
-                    favorites.length == 0
-                        ?
-                        noFavoriteItemsInfo()
-                        :
-                        favoritesItemsInfo()
-                }
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : favorites.length == 0 ? (
+                    noFavoriteItemsInfo()
+                ) : (
+                    favoritesItemsInfo()
+                )}
                 {snackBar()}
             </View>
         </View>
@@ -81,22 +85,26 @@ const FavoriteScreen = () => {
         )
     }
 
-    function removeFormFavorite({ id }) {
-        const copyFavorites = favorites;
-        const newFavorites = copyFavorites.filter((item) => item.id !== id)
-        setfavorites(newFavorites);
-        setShowSnackBar(true);
+    async function removeFormFavorite({ productId }) {
+        try {
+            const updateFavorites = httpsCallable(functions, 'updateFavorites');
+            await updateFavorites({ action: 'remove', productId });
+            await fetchFavorites();
+            setShowSnackBar(true);
+        } catch (err) {
+            seterrorText('Failed to remove favorite.');
+        }
     }
 
     function favoritesItemsInfo() {
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => { navigation.push('productDetail/productDetailScreen') }}
+                onPress={() => { navigation.push('productDetail/productDetailScreen', { productId: item.productId }) }}
                 style={{ flex: 1, marginBottom: Sizes.fixPadding * 2.0, ...styles.productWrapStyle, }}
             >
                 <Image
-                    source={item.jewellaryImage}
+                    source={item.image ? { uri: item.image } : placeholderImage}
                     style={styles.productImageStyle}
                 />
                 <MaterialIcons
@@ -104,15 +112,15 @@ const FavoriteScreen = () => {
                     size={18}
                     color={Colors.blackColor}
                     style={{ position: 'absolute', right: 10.0, top: 10.0 }}
-                    onPress={() => { removeFormFavorite({ id: item.id }) }}
+                    onPress={() => { removeFormFavorite({ productId: item.productId }) }}
                 />
                 <View style={{ backgroundColor: Colors.offWhiteColor, height: 1.0, }} />
                 <View style={{ margin: Sizes.fixPadding + 5.0 }}>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16Regular, lineHeight: 22.0, }}>
-                        {item.jewellaryName}
+                        {item.name}
                     </Text>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16SemiBold, lineHeight: 22.0, }}>
-                        {`$`}{item.amount.toFixed(2)}
+                        {`₹`}{Number(item.finalPrice || 0).toFixed(2)}
                     </Text>
                 </View>
             </TouchableOpacity>
@@ -120,7 +128,7 @@ const FavoriteScreen = () => {
         return (
             <FlatList
                 data={favorites}
-                keyExtractor={(item) => `${item.id}`}
+                keyExtractor={(item) => `${item.productId}`}
                 renderItem={renderItem}
                 numColumns={2}
                 contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding * 2.0, }}
@@ -156,5 +164,14 @@ const styles = StyleSheet.create({
         height: Screen.width / 3.5,
         resizeMode: 'contain',
         margin: Sizes.fixPadding + 5.0,
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
     },
 })

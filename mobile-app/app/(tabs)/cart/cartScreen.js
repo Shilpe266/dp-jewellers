@@ -1,53 +1,57 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, CommomStyles, Fonts, Screen, Sizes } from '../../../constants/styles';
 import { MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../lib/firebase';
 
-const cartsList = [
-    {
-        id: '1',
-        jewelleryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewelleryName: 'Silver Plated Ring',
-        size: 48,
-        amount: 120.00,
-        qty: 2,
-    },
-    {
-        id: '2',
-        jewelleryImage: require('../../../assets/images/jewellery/jewellary10.png'),
-        jewelleryName: 'Silver Grace Ring',
-        size: 46,
-        amount: 125.25,
-        qty: 1,
-    },
-    {
-        id: '3',
-        jewelleryImage: require('../../../assets/images/jewellery/jewellary3.png'),
-        jewelleryName: 'Diamond Earrings',
-        size: 'M',
-        amount: 149.50,
-        qty: 1,
-    },
-];
+const placeholderImage = require('../../../assets/images/jewellery/jewellary1.png');
 
 const CartScreen = () => {
 
     const navigation = useNavigation();
 
-    const [cart, setcart] = useState(cartsList);
+    const [cart, setcart] = useState([]);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+
+    useEffect(() => {
+        fetchCart();
+    }, []);
+
+    const fetchCart = async () => {
+        setloading(true);
+        seterrorText('');
+        try {
+            const getCart = httpsCallable(functions, 'getCart');
+            const res = await getCart();
+            setcart(res?.data?.cart || []);
+        } catch (err) {
+            seterrorText('Failed to load cart.');
+            setcart([]);
+        } finally {
+            setloading(false);
+        }
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <View style={{ flex: 1 }}>
                 {header()}
-                {
-                    cart.length == 0
-                        ?
-                        noCartItemsInfo()
-                        :
-                        cartItems()
-                }
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : cart.length == 0 ? (
+                    noCartItemsInfo()
+                ) : (
+                    cartItems()
+                )}
 
             </View>
         </View>
@@ -94,7 +98,7 @@ const CartScreen = () => {
     }
 
     function totalInfo() {
-        const subTotal = cart.reduce((acc, item) => acc + item.qty * item.amount, 0);
+        const subTotal = cart.reduce((acc, item) => acc + (item.quantity || 0) * (item.finalPrice || 0), 0);
         const deliveryCharge = 0;
         const total = subTotal + deliveryCharge;
         return (
@@ -104,7 +108,7 @@ const CartScreen = () => {
                         Sub Total
                     </Text>
                     <Text style={{ textAlign: 'right', ...Fonts.blackColor16Regular, marginTop: Sizes.fixPadding - 5.0 }}>
-                        {`$`}{subTotal}
+                        {`₹`}{subTotal.toFixed(2)}
                     </Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: Sizes.fixPadding, }}>
@@ -121,30 +125,40 @@ const CartScreen = () => {
                         Total
                     </Text>
                     <Text style={{ textAlign: 'right', ...Fonts.blackColor16SemiBold, }}>
-                        ${total}
+                        ₹{total.toFixed(2)}
                     </Text>
                 </View>
             </View>
         )
     }
 
-    function updateQty({ action, id }) {
-        const copyCart = cart;
-        const newCart = copyCart.map((item) => {
-            if (item.id == id) {
-                return { ...item, qty: action == 'add' ? item.qty + 1 : item.qty - 1 }
-            }
-            else {
-                return item
-            }
-        })
-        setcart(newCart);
+    async function updateQty({ action, productId, size, quantity }) {
+        try {
+            const updateCart = httpsCallable(functions, 'updateCart');
+            await updateCart({
+                action: 'update',
+                productId,
+                size: size || null,
+                quantity,
+            });
+            await fetchCart();
+        } catch (err) {
+            seterrorText('Failed to update cart.');
+        }
     }
 
-    function removeItem({ id }) {
-        const copyCart = cart;
-        const newCart = copyCart.filter((item) => item.id !== id)
-        setcart(newCart);
+    async function removeItem({ productId, size }) {
+        try {
+            const updateCart = httpsCallable(functions, 'updateCart');
+            await updateCart({
+                action: 'remove',
+                productId,
+                size: size || null,
+            });
+            await fetchCart();
+        } catch (err) {
+            seterrorText('Failed to remove item.');
+        }
     }
 
     function cartItemsInfo() {
@@ -153,43 +167,64 @@ const CartScreen = () => {
                 <View style={{ flexDirection: 'row', flex: 1, }}>
                     <View style={styles.jewelleryImageWrapStyle}>
                         <Image
-                            source={item.jewelleryImage}
+                            source={item.image ? { uri: item.image } : placeholderImage}
                             style={{ width: '80%', resizeMode: 'contain', height: '80%', }}
                         />
                     </View>
                     <View style={{ flex: 1, marginLeft: Sizes.fixPadding + 3.0, }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Sizes.fixPadding - 13.0, }}>
                             <Text numberOfLines={1} style={{ flex: 1, ...Fonts.blackColor16Regular, marginRight: Sizes.fixPadding - 5.0 }}>
-                                {item.jewelleryName}
+                                {item.name}
                             </Text>
                             <Text style={{ ...Fonts.blackColor16Regular }}>
-                                {`$`}{item.amount.toFixed(2)}
+                                {`₹`}{Number(item.finalPrice || 0).toFixed(2)}
                             </Text>
                         </View>
                         <Text style={{ ...Fonts.grayColor14Regular, marginTop: -2.0 }}>
-                            Size: 48
+                            Size: {item.size || 'N/A'}
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Sizes.fixPadding - 4.0 }}>
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', }}>
                                 <TouchableOpacity
                                     activeOpacity={0.5}
-                                    onPress={() => { item.qty > 1 ? updateQty({ action: 'remove', id: item.id }) : null }}
+                                    onPress={() => {
+                                        if (item.quantity > 1) {
+                                            updateQty({
+                                                action: 'remove',
+                                                productId: item.productId,
+                                                size: item.size,
+                                                quantity: item.quantity - 1
+                                            })
+                                        }
+                                    }}
                                     style={styles.addRemoveBoxStyle}
                                 >
                                     <MaterialIcons name="remove" size={15} color={Colors.blackColor} />
                                 </TouchableOpacity>
                                 <Text style={{ ...Fonts.blackColor14Bold, marginHorizontal: Sizes.fixPadding + 5.0, }}>
-                                    {item.qty}
+                                    {item.quantity}
                                 </Text>
                                 <TouchableOpacity
                                     activeOpacity={0.5}
-                                    onPress={() => { updateQty({ action: 'add', id: item.id }) }}
+                                    onPress={() => {
+                                        updateQty({
+                                            action: 'add',
+                                            productId: item.productId,
+                                            size: item.size,
+                                            quantity: (item.quantity || 0) + 1
+                                        })
+                                    }}
                                     style={styles.addRemoveBoxStyle}
                                 >
                                     <MaterialIcons name="add" size={15} color={Colors.blackColor} />
                                 </TouchableOpacity>
                             </View>
-                            <Feather name="trash-2" size={18} color={Colors.blackColor} onPress={() => { removeItem({ id: item.id }) }} />
+                            <Feather
+                                name="trash-2"
+                                size={18}
+                                color={Colors.blackColor}
+                                onPress={() => { removeItem({ productId: item.productId, size: item.size }) }}
+                            />
                         </View>
                     </View>
                 </View>
@@ -199,7 +234,7 @@ const CartScreen = () => {
             <View style={{ marginTop: Sizes.fixPadding * 2.0, }}>
                 <FlatList
                     data={cart}
-                    keyExtractor={(item) => `${item.id}`}
+                    keyExtractor={(item) => `${item.productId}-${item.size || 'na'}`}
                     renderItem={renderItem}
                     scrollEnabled={false}
                 />
@@ -261,5 +296,14 @@ const styles = StyleSheet.create({
         marginHorizontal: Sizes.fixPadding * 2.0,
         paddingTop: Sizes.fixPadding - 5.0,
         paddingBottom: Sizes.fixPadding - 3.0
-    }
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
+    },
 })

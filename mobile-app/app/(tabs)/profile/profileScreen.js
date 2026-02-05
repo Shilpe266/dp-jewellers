@@ -2,6 +2,8 @@ import { StyleSheet, Text, View, Image, ScrollView, Modal, TouchableOpacity } fr
 import React, { useState } from 'react'
 import { Colors, CommomStyles, Fonts, Screen, Sizes } from '../../../constants/styles'
 import { useNavigation } from 'expo-router'
+import { signOut } from 'firebase/auth'
+import { auth } from '../../../lib/firebase'
 
 const ProfileScreen = () => {
 
@@ -60,7 +62,14 @@ const ProfileScreen = () => {
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         activeOpacity={0.5}
-                                        onPress={() => { setshowLogoutDialog(false), navigation.push('auth/loginScreen') }}
+                                        onPress={async () => {
+                                            setshowLogoutDialog(false)
+                                            try {
+                                                await signOut(auth)
+                                            } finally {
+                                                navigation.push('auth/loginScreen')
+                                            }
+                                        }}
                                         style={{ ...styles.cancelAndYesButtonStyle, borderTopRightRadius: Sizes.fixPadding, }}
                                     >
                                         <Text style={{ ...Fonts.primaryColor19Medium }}>

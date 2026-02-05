@@ -1,8 +1,10 @@
-import { StyleSheet, Text, View, Image, TextInput, ScrollView, TouchableOpacity, FlatList } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, Image, TextInput, ScrollView, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, Fonts, Sizes, Screen } from '../../../constants/styles'
 import { Feather, MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../../lib/firebase';
 
 const popularSearches = [
     'Bracelets', 'Charms', 'Rings', 'Body Jewelry', 'Anklets', 'Necklace'
@@ -19,106 +21,127 @@ const recentSearchesList = [
     }
 ];
 
-const recommendedList = [
-    {
-        id: '1',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Silver Plated Ring',
-        amount: 100.00,
-    },
-    {
-        id: '2',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary5.png'),
-        jewellaryName: 'Diamond Earrings',
-        amount: 149.50,
-    },
-    {
-        id: '3',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary6.png'),
-        jewellaryName: 'Sunshine Ring',
-        amount: 299.50,
-    },
-    {
-        id: '4',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary7.png'),
-        jewellaryName: 'Diamond Bracelet',
-        amount: 249.50,
-    },
-    {
-        id: '5',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary8.png'),
-        jewellaryName: 'Silver Earrings',
-        amount: 120.00,
-    },
-    {
-        id: '6',
-        jewellaryImage: require('../../../assets/images/jewellery/jewellary9.png'),
-        jewellaryName: 'Necklace',
-        amount: 150.50,
-    },
-];
+const placeholderImage = require('../../../assets/images/jewellery/jewellary1.png');
 
 const SearchScreen = () => {
 
     const navigation = useNavigation();
+    const params = useLocalSearchParams();
 
     const [search, setsearch] = useState('');
-    const [recentSearches, setrecentSearches] = useState(recentSearchesList)
+    const [recentSearches, setrecentSearches] = useState(recentSearchesList);
+    const [results, setresults] = useState([]);
+    const [loading, setloading] = useState(false);
+    const [errorText, seterrorText] = useState('');
+    const [filters, setfilters] = useState({
+        material: '',
+        minPrice: '',
+        maxPrice: '',
+    });
+
+    useEffect(() => {
+        const material = params?.material ? String(params.material) : '';
+        const minPrice = params?.minPrice ? String(params.minPrice) : '';
+        const maxPrice = params?.maxPrice ? String(params.maxPrice) : '';
+        setfilters({ material, minPrice, maxPrice });
+    }, [params?.material, params?.minPrice, params?.maxPrice]);
+
+    useEffect(() => {
+        let active = true;
+        const runSearch = async () => {
+            const hasQuery = search.trim().length > 0;
+            const hasFilter = Boolean(filters.material || filters.minPrice || filters.maxPrice);
+            if (!hasQuery && !hasFilter) {
+                setresults([]);
+                setloading(false);
+                seterrorText('');
+                return;
+            }
+            setloading(true);
+            seterrorText('');
+            try {
+                const searchProducts = httpsCallable(functions, 'searchProducts');
+                const res = await searchProducts({
+                    query: search.trim() || undefined,
+                    material: filters.material || undefined,
+                    minPrice: filters.minPrice ? Number(filters.minPrice) : undefined,
+                    maxPrice: filters.maxPrice ? Number(filters.maxPrice) : undefined,
+                });
+                if (active) {
+                    setresults(res?.data?.products || []);
+                }
+            } catch (err) {
+                if (active) {
+                    seterrorText('Failed to load results.');
+                    setresults([]);
+                }
+            } finally {
+                if (active) setloading(false);
+            }
+        };
+        runSearch();
+        return () => { active = false; };
+    }, [search, filters.material, filters.minPrice, filters.maxPrice]);
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <View style={{ flex: 1 }}>
                 {searchBarWithFilterIcon()}
-                <ScrollView
-                    automaticallyAdjustKeyboardInsets={true}
-                    showsVerticalScrollIndicator={false}
-                >
-                    {popularSearchesInfo()}
-                    {
-                        recentSearches.length == 0
-                            ?
-                            null
-                            :
-                            recentSearchesInfo()
-                    }
-                    {recommendedInfo()}
-                </ScrollView>
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : results.length > 0 ? (
+                    resultsList()
+                ) : (
+                    <ScrollView
+                        automaticallyAdjustKeyboardInsets={true}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {popularSearchesInfo()}
+                        {recentSearches.length == 0 ? null : recentSearchesInfo()}
+                    </ScrollView>
+                )}
             </View>
         </View>
     )
 
-    function recommendedInfo() {
+    function resultsList() {
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.5}
-                onPress={() => { navigation.push('productDetail/productDetailScreen') }}
-                style={{ ...styles.recommendedItemWrapStyle, width: Screen.width / 2.4, }}
+                onPress={() => { navigation.push('productDetail/productDetailScreen', { productId: item.productId }) }}
+                style={{ ...styles.recommendedItemWrapStyle, flex: 1, }}
             >
                 <Image
-                    source={item.jewellaryImage}
+                    source={item.image ? { uri: item.image } : placeholderImage}
                     style={styles.productImageStyle}
                 />
                 <View style={{ backgroundColor: Colors.offWhiteColor, height: 1.0, }} />
                 <View style={{ margin: Sizes.fixPadding + 5.0 }}>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16Regular }}>
-                        {item.jewellaryName}
+                        {item.name}
                     </Text>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16SemiBold }}>
-                        {`$`}{item.amount.toFixed(2)}
+                        {`₹`}{Number(item.finalPrice || 0).toFixed(2)}
                     </Text>
                 </View>
             </TouchableOpacity>
         )
         return (
-            <View style={{ marginVertical: Sizes.fixPadding * 2.0, }}>
+            <View style={{ marginVertical: Sizes.fixPadding * 2.0 }}>
                 <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, ...Fonts.blackColor18SemiBold }}>
-                    Recommended for You
+                    Results
                 </Text>
                 <FlatList
-                    data={recommendedList}
-                    keyExtractor={(item) => `${item.id}`}
+                    data={results}
+                    keyExtractor={(item) => `${item.productId}`}
                     renderItem={renderItem}
-                    horizontal
+                    numColumns={2}
                     contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding + 3.0 }}
                     showsHorizontalScrollIndicator={false}
                 />
@@ -150,7 +173,10 @@ const SearchScreen = () => {
                                 key={`${index}`}
                                 style={{ ...styles.searchesWrapStyle, flexDirection: 'row', alignItems: 'center' }}
                             >
-                                <Text style={{ ...Fonts.blackColor15Regular }}>
+                                <Text
+                                    style={{ ...Fonts.blackColor15Regular }}
+                                    onPress={() => { setsearch(item.search) }}
+                                >
                                     {item.search}
                                 </Text>
                                 <MaterialIcons
@@ -181,7 +207,10 @@ const SearchScreen = () => {
                                 key={`${index}`}
                                 style={styles.searchesWrapStyle}
                             >
-                                <Text style={{ ...Fonts.blackColor15Regular }}>
+                                <Text
+                                    style={{ ...Fonts.blackColor15Regular }}
+                                    onPress={() => { setsearch(item) }}
+                                >
                                     {item}
                                 </Text>
                             </View>
@@ -207,7 +236,18 @@ const SearchScreen = () => {
                         selectionColor={Colors.primaryColor}
                         numberOfLines={1}
                     />
-                    <Feather name="sliders" size={18} color={Colors.blackColor} onPress={() => { navigation.push('filter/filterScreen') }} />
+                    <Feather
+                        name="sliders"
+                        size={18}
+                        color={Colors.blackColor}
+                        onPress={() => {
+                            navigation.push('filter/filterScreen', {
+                                material: filters.material || '',
+                                minPrice: filters.minPrice || '',
+                                maxPrice: filters.maxPrice || '',
+                            })
+                        }}
+                    />
                 </View>
                 <View style={{ backgroundColor: Colors.lightGrayColor, height: 1.0, marginTop: Sizes.fixPadding }} />
             </View>
@@ -246,5 +286,14 @@ const styles = StyleSheet.create({
         borderRadius: Sizes.fixPadding,
         marginHorizontal: Sizes.fixPadding,
         maxWidth: (Screen.width / 2.0) - 30
-    }
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
+    },
 })

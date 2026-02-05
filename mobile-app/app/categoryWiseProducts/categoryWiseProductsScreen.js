@@ -1,95 +1,65 @@
-import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity } from 'react-native'
-import React from 'react'
+import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, Fonts, Sizes, Screen, CommomStyles } from '../../constants/styles'
 import { MaterialIcons } from '@expo/vector-icons';
 import MyStatusBar from '../../components/myStatusBar';
-import { useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../lib/firebase';
 
-const categoryWistItemsList = [
-    {
-        id: '1',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Silver Plated Ring',
-        amount: 100.00,
-    },
-    {
-        id: '2',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary6.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 119.50,
-    },
-    {
-        id: '3',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary12.png'),
-        jewellaryName: 'Silver Ring',
-        amount: 120.50,
-    },
-    {
-        id: '4',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary10.png'),
-        jewellaryName: 'Silver Grace Ring',
-        amount: 125.25,
-    },
-    {
-        id: '5',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary11.png'),
-        jewellaryName: 'Silver Ring',
-        amount: 124.50,
-    },
-    {
-        id: '6',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary13.png'),
-        jewellaryName: 'Platinum Plated Ring',
-        amount: 149.50,
-    },
-    {
-        id: '7',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary14.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 120.50,
-    },
-    {
-        id: '8',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary1.png'),
-        jewellaryName: 'Silver Ring',
-        amount: 124.50,
-    },
-    {
-        id: '9',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary6.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 119.50,
-    },
-    {
-        id: '10',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary12.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 119.50,
-    },
-    {
-        id: '11',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary10.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 119.50,
-    },
-    {
-        id: '12',
-        jewellaryImage: require('../../assets/images/jewellery/jewellary11.png'),
-        jewellaryName: 'Diamond Ring',
-        amount: 119.50,
-    },
-];
+const placeholderImage = require('../../assets/images/jewellery/jewellary1.png');
 
 const CategoryWiseProductsScreen = () => {
 
     const navigation = useNavigation();
+    const { category } = useLocalSearchParams();
+    const categoryName = category ? String(category) : 'Rings';
+
+    const [items, setitems] = useState([]);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+
+    useEffect(() => {
+        let active = true;
+        const fetchProducts = async () => {
+            setloading(true);
+            seterrorText('');
+            try {
+                const getProductsByCategory = httpsCallable(functions, 'getProductsByCategory');
+                const res = await getProductsByCategory({ category: categoryName });
+                const products = res?.data?.products || [];
+                if (active) {
+                    setitems(products);
+                }
+            } catch (err) {
+                if (active) {
+                    seterrorText('Failed to load products.');
+                    setitems([]);
+                }
+            } finally {
+                if (active) setloading(false);
+            }
+        };
+        fetchProducts();
+        return () => { active = false; };
+    }, [categoryName]);
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <MyStatusBar />
             <View style={{ flex: 1 }}>
                 {header()}
-                {itemsListInfo()}
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : (
+                    itemsListInfo()
+                )}
             </View>
         </View>
     )
@@ -98,28 +68,28 @@ const CategoryWiseProductsScreen = () => {
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => { navigation.push('productDetail/productDetailScreen') }}
+                onPress={() => { navigation.push('productDetail/productDetailScreen', { productId: item.productId }) }}
                 style={{ flex: 1, marginBottom: Sizes.fixPadding * 2.0, ...styles.productWrapStyle, }}
             >
                 <Image
-                    source={item.jewellaryImage}
+                    source={item.image ? { uri: item.image } : placeholderImage}
                     style={styles.productImageStyle}
                 />
                 <View style={{ backgroundColor: Colors.offWhiteColor, height: 1.0, }} />
                 <View style={{ margin: Sizes.fixPadding + 5.0 }}>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16Regular, lineHeight: 22.0, }}>
-                        {item.jewellaryName}
+                        {item.name}
                     </Text>
                     <Text numberOfLines={1} style={{ ...Fonts.blackColor16SemiBold, lineHeight: 22.0, }}>
-                        {`$`}{item.amount.toFixed(2)}
+                        {`₹`}{Number(item.finalPrice || 0).toFixed(2)}
                     </Text>
                 </View>
             </TouchableOpacity>
         )
         return (
             <FlatList
-                data={categoryWistItemsList}
-                keyExtractor={(item) => `${item.id}`}
+                data={items}
+                keyExtractor={(item) => `${item.productId}`}
                 renderItem={renderItem}
                 numColumns={2}
                 contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding * 2.0, }}
@@ -133,7 +103,7 @@ const CategoryWiseProductsScreen = () => {
             <View style={CommomStyles.headerStyle}>
                 <MaterialIcons name="keyboard-backspace" size={26} color={Colors.blackColor} onPress={() => { navigation.pop() }} />
                 <Text style={{ ...Fonts.blackColor20SemiBold, marginLeft: Sizes.fixPadding * 2.0, }}>
-                    Rings
+                    {categoryName}
                 </Text>
             </View>
         )
@@ -156,5 +126,14 @@ const styles = StyleSheet.create({
         height: Screen.width / 3.5,
         resizeMode: 'contain',
         margin: Sizes.fixPadding + 5.0,
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
     },
 })

@@ -21,6 +21,42 @@ async function verifyProductAdmin(auth) {
 }
 
 /**
+ * Generate a unique product code: DP-{CAT}-{4 digits}
+ */
+exports.generateProductCode = onCall({ region: "asia-south1" }, async (request) => {
+  await verifyProductAdmin(request.auth);
+
+  const { category } = request.data;
+  if (!category) {
+    throw new HttpsError("invalid-argument", "category is required.");
+  }
+
+  const catMap = {
+    Ring: "RNG", Necklace: "NKL", Earring: "ERG", Bangle: "BNG",
+    Bracelet: "BRC", Pendant: "PND", Chain: "CHN", Anklet: "ANK",
+    Mangalsutra: "MNG", Kada: "KDA", Nosering: "NSR",
+  };
+  const prefix = `DP-${catMap[category] || category.slice(0, 3).toUpperCase()}`;
+
+  const snapshot = await db.collection(PRODUCTS)
+    .where("productCode", ">=", prefix)
+    .where("productCode", "<=", prefix + "\uf8ff")
+    .orderBy("productCode", "desc")
+    .limit(1)
+    .get();
+
+  let nextNum = 1;
+  if (!snapshot.empty) {
+    const lastCode = snapshot.docs[0].data().productCode;
+    const parts = lastCode.split("-");
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+  }
+
+  return { productCode: `${prefix}-${String(nextNum).padStart(4, "0")}` };
+});
+
+/**
  * Create a new product
  */
 exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
@@ -56,6 +92,9 @@ exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
     diamond: data.diamond || { hasDiamond: false },
     gemstones: data.gemstones || [],
     dimensions: data.dimensions || {},
+    goldOptions: data.goldOptions || [],
+    sizes: data.sizes || [],
+    tax: data.tax || {},
     pricing: pricing,
     certifications: data.certifications || {},
     policies: data.policies || {
@@ -83,10 +122,11 @@ exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
     bestseller: data.bestseller || false,
     newArrival: data.newArrival !== undefined ? data.newArrival : true,
     displayOrder: data.displayOrder || 0,
+    status: data.status || "active",
     createdBy: request.auth.uid,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    isActive: true,
+    isActive: !data.status || data.status === "active" || data.status === "coming_soon",
     viewCount: 0,
     purchaseCount: 0,
   };
@@ -119,8 +159,13 @@ exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
   const existingData = productDoc.data();
   const mergedData = { ...existingData, ...updateData };
 
-  if (updateData.metal || updateData.diamond || updateData.pricing) {
+  if (updateData.metal || updateData.diamond || updateData.pricing || updateData.tax) {
     updateData.pricing = await calculatePricing(mergedData);
+  }
+
+  // Sync isActive with status if status changed
+  if (updateData.status) {
+    updateData.isActive = updateData.status === "active" || updateData.status === "coming_soon";
   }
 
   updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
@@ -131,7 +176,7 @@ exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
 });
 
 /**
- * Soft delete a product (set isActive = false)
+ * Archive a product (soft delete)
  */
 exports.deleteProduct = onCall({ region: "asia-south1" }, async (request) => {
   await verifyProductAdmin(request.auth);
@@ -149,11 +194,39 @@ exports.deleteProduct = onCall({ region: "asia-south1" }, async (request) => {
   }
 
   await productRef.update({
+    status: "archived",
     isActive: false,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  return { productId, message: "Product deleted successfully." };
+  return { productId, message: "Product archived successfully." };
+});
+
+/**
+ * Restore an archived product
+ */
+exports.restoreProduct = onCall({ region: "asia-south1" }, async (request) => {
+  await verifyProductAdmin(request.auth);
+
+  const { productId } = request.data;
+  if (!productId) {
+    throw new HttpsError("invalid-argument", "productId is required.");
+  }
+
+  const productRef = db.collection(PRODUCTS).doc(productId);
+  const productDoc = await productRef.get();
+
+  if (!productDoc.exists) {
+    throw new HttpsError("not-found", "Product not found.");
+  }
+
+  await productRef.update({
+    status: "active",
+    isActive: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { productId, message: "Product restored successfully." };
 });
 
 /**
@@ -202,13 +275,25 @@ exports.listProducts = onCall({ region: "asia-south1" }, async (request) => {
     newArrival,
     collection,
     tag,
+    includeAll,
     sortBy = "createdAt",
     sortOrder = "desc",
     limit = 20,
     startAfterDoc,
   } = request.data || {};
 
-  let query = db.collection(PRODUCTS).where("isActive", "==", true);
+  // If includeAll is true and caller is admin, show all products including archived
+  let showAll = false;
+  if (includeAll && request.auth) {
+    const adminDoc = await db.collection("admins").doc(request.auth.uid).get();
+    if (adminDoc.exists && adminDoc.data().isActive) {
+      showAll = true;
+    }
+  }
+
+  let query = showAll
+    ? db.collection(PRODUCTS)
+    : db.collection(PRODUCTS).where("isActive", "==", true);
 
   if (category) query = query.where("category", "==", category);
   if (subCategory) query = query.where("subCategory", "==", subCategory);
@@ -349,16 +434,32 @@ async function calculatePricing(productData) {
   let diamondValue = 0;
   let diamondRatePerCarat = 0;
 
-  if (diamond.hasDiamond && diamond.totalCaratWeight && rates.diamond) {
+  if (diamond.hasDiamond && rates.diamond) {
     const clarityMap = { FL: "IF", IF: "IF", VVS1: "VVS", VVS2: "VVS", VS1: "VS", VS2: "VS", SI1: "SI", SI2: "SI" };
     const colorMap = { D: "DEF", E: "DEF", F: "DEF", G: "GH", H: "GH", I: "IJ", J: "IJ" };
 
-    const clarityKey = clarityMap[diamond.clarity] || "SI";
-    const colorKey = colorMap[diamond.color] || "IJ";
-    const rateKey = `${clarityKey}_${colorKey}`;
-
-    diamondRatePerCarat = rates.diamond[rateKey] || rates.diamond["SI_IJ"] || 25000;
-    diamondValue = diamond.totalCaratWeight * diamondRatePerCarat;
+    if (diamond.variants && diamond.variants.length > 0) {
+      // Per-variant calculation: each variant has its own clarity/color/rate
+      for (const variant of diamond.variants) {
+        const vClarity = clarityMap[variant.clarity] || clarityMap[diamond.clarity] || "SI";
+        const vColor = colorMap[variant.color] || colorMap[diamond.color] || "IJ";
+        const vRateKey = `${vClarity}_${vColor}`;
+        const vRate = rates.diamond[vRateKey] || rates.diamond["SI_IJ"] || 25000;
+        diamondValue += (variant.caratWeight || 0) * vRate;
+      }
+      // Use the first variant's rate as the representative rate
+      const firstClarity = clarityMap[diamond.variants[0].clarity] || "SI";
+      const firstColor = colorMap[diamond.variants[0].color] || "IJ";
+      diamondRatePerCarat = rates.diamond[`${firstClarity}_${firstColor}`] || rates.diamond["SI_IJ"] || 25000;
+    } else {
+      // Legacy: single clarity/color at diamond level
+      const clarityKey = clarityMap[diamond.clarity] || "SI";
+      const colorKey = colorMap[diamond.color] || "IJ";
+      const rateKey = `${clarityKey}_${colorKey}`;
+      diamondRatePerCarat = rates.diamond[rateKey] || rates.diamond["SI_IJ"] || 25000;
+      const totalCaratWeight = diamond.totalCaratWeight || 0;
+      diamondValue = totalCaratWeight * diamondRatePerCarat;
+    }
   }
 
   // Calculate gemstone value
@@ -396,10 +497,19 @@ async function calculatePricing(productData) {
     makingChargeAmount + wastageChargeAmount + stoneSettingCharges + designCharges;
 
   const discount = pricing.discount || 0;
-  const taxRate = taxSettings.gst?.jewelry || 3;
-  const taxableAmount = subtotal - discount;
-  const taxAmount = taxableAmount * (taxRate / 100);
-  const finalPrice = Math.round(taxableAmount + taxAmount);
+
+  // Use product-level tax if set, otherwise fall back to global tax settings
+  const productTax = productData.tax || {};
+  const jewelryTaxRate = productTax.jewelryGst || taxSettings.gst?.jewelry || 3;
+  const makingTaxRate = productTax.makingGst || taxSettings.gst?.makingCharges || 5;
+
+  const jewelryTaxableAmount = metalValue + diamondValue + gemstoneValue;
+  const labourTaxableAmount = makingChargeAmount + wastageChargeAmount + stoneSettingCharges + designCharges;
+
+  const jewelryTaxAmount = jewelryTaxableAmount * (jewelryTaxRate / 100);
+  const labourTaxAmount = labourTaxableAmount * (makingTaxRate / 100);
+  const totalTaxAmount = jewelryTaxAmount + labourTaxAmount;
+  const finalPrice = Math.round(subtotal - discount + totalTaxAmount);
 
   return {
     goldRatePerGram: metal.type === "gold" ? ratePerGram : 0,
@@ -418,8 +528,11 @@ async function calculatePricing(productData) {
     gemstoneValue,
     subtotal: Math.round(subtotal),
     discount,
-    taxRate,
-    taxAmount: Math.round(taxAmount),
+    jewelryTaxRate,
+    makingTaxRate,
+    jewelryTaxAmount: Math.round(jewelryTaxAmount),
+    labourTaxAmount: Math.round(labourTaxAmount),
+    taxAmount: Math.round(totalTaxAmount),
     finalPrice,
     mrp: pricing.mrp || finalPrice,
     sellingPrice: finalPrice,

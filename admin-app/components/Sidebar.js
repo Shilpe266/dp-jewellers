@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -11,7 +10,6 @@ import {
   ListItemIcon,
   ListItemText,
   Typography,
-  IconButton,
   Divider,
   Box,
 } from '@mui/material';
@@ -22,7 +20,9 @@ import {
   ShoppingCart,
   People,
   Logout,
-  Menu as MenuIcon,
+  AdminPanelSettings,
+  Support,
+  Store,
 } from '@mui/icons-material';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -30,14 +30,17 @@ import { auth } from '@/lib/firebase';
 const drawerWidth = 260;
 
 const menuItems = [
-  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-  { text: 'Pricing', icon: <AttachMoney />, path: '/dashboard/pricing' },
-  { text: 'Products', icon: <Inventory />, path: '/dashboard/products' },
-  { text: 'Orders', icon: <ShoppingCart />, path: '/dashboard/orders' },
-  { text: 'Users', icon: <People />, path: '/dashboard/users' },
+  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard', roles: ['super_admin', 'admin', 'editor'] },
+  { text: 'Pricing', icon: <AttachMoney />, path: '/dashboard/pricing', roles: ['super_admin'], permission: 'manageRates' },
+  { text: 'Products', icon: <Inventory />, path: '/dashboard/products', roles: ['super_admin', 'admin', 'editor'], permission: 'manageProducts' },
+  { text: 'Orders', icon: <ShoppingCart />, path: '/dashboard/orders', roles: ['super_admin', 'admin'], permission: 'manageOrders' },
+  { text: 'Stores', icon: <Store />, path: '/dashboard/stores', roles: ['super_admin'] },
+  { text: 'Users', icon: <People />, path: '/dashboard/users', roles: ['super_admin'], permission: 'manageUsers' },
+  { text: 'Manage Admins', icon: <AdminPanelSettings />, path: '/dashboard/admins', roles: ['super_admin'] },
+  { text: 'Support', icon: <Support />, path: '/dashboard/support', roles: ['super_admin', 'admin', 'editor'] },
 ];
 
-export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
+export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -49,6 +52,32 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
       console.error('Logout error:', error);
     }
   };
+
+  // Filter menu items based on admin role and permissions
+  const getVisibleMenuItems = () => {
+    if (!adminData) return menuItems; // Show all if no admin data yet (loading state)
+
+    const role = adminData.role || 'editor';
+    const permissions = adminData.permissions || {};
+
+    return menuItems.filter(item => {
+      // Super admin sees everything
+      if (role === 'super_admin') return true;
+
+      // Check if role is explicitly allowed
+      if (item.roles && item.roles.includes(role)) {
+        // If item has permission requirement, check it
+        if (item.permission) {
+          return permissions[item.permission] === true;
+        }
+        return true;
+      }
+
+      return false;
+    });
+  };
+
+  const visibleMenuItems = getVisibleMenuItems();
 
   const drawer = (
     <div className="h-full flex flex-col" style={{ backgroundColor: '#1E1B4B' }}>
@@ -65,12 +94,21 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle }) {
         >
           Admin Panel
         </Typography>
+        {adminData && (
+          <Typography
+            variant="caption"
+            className="text-gray-400 text-center block mt-1"
+            sx={{ textTransform: 'capitalize' }}
+          >
+            {adminData.role?.replace('_', ' ') || 'Admin'}
+          </Typography>
+        )}
       </div>
 
       <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.12)' }} />
 
       <List className="flex-1 px-3 py-4">
-        {menuItems.map((item) => (
+        {visibleMenuItems.map((item) => (
           <ListItem key={item.text} disablePadding className="mb-2">
             <Link href={item.path} className="w-full">
               <ListItemButton

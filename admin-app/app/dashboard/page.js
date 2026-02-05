@@ -1,16 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Paper, Typography, Grid, Box } from '@mui/material';
+import { Paper, Typography, Grid, Box, Divider, Chip } from '@mui/material';
 import {
-  AttachMoney,
   Inventory,
   ShoppingCart,
   People,
   TrendingUp,
+  CurrencyRupee,
+  Diamond,
+  CalendarToday,
+  CalendarMonth,
 } from '@mui/icons-material';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import app from '@/lib/firebase';
+
+const functions = getFunctions(app, 'asia-south1');
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
@@ -18,46 +23,31 @@ export default function DashboardPage() {
     totalOrders: 0,
     totalUsers: 0,
     pendingOrders: 0,
+    todaySales: 0,
+    todayOrders: 0,
+    monthlySales: 0,
+    monthlyOrders: 0,
   });
+  const [metalRates, setMetalRates] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       try {
-        // Fetch products count
-        const productsSnapshot = await getDocs(collection(db, 'products'));
-        const totalProducts = productsSnapshot.size;
-
-        // Fetch orders count
-        const ordersSnapshot = await getDocs(collection(db, 'orders'));
-        const totalOrders = ordersSnapshot.size;
-
-        // Fetch pending orders count
-        const pendingOrdersQuery = query(
-          collection(db, 'orders'),
-          where('status', '==', 'pending')
-        );
-        const pendingOrdersSnapshot = await getDocs(pendingOrdersQuery);
-        const pendingOrders = pendingOrdersSnapshot.size;
-
-        // Fetch users count
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        const totalUsers = usersSnapshot.size;
-
-        setStats({
-          totalProducts,
-          totalOrders,
-          totalUsers,
-          pendingOrders,
-        });
+        const [statsResult, ratesResult] = await Promise.all([
+          httpsCallable(functions, 'getDashboardStats')(),
+          httpsCallable(functions, 'getMetalRates')(),
+        ]);
+        setStats(statsResult.data);
+        setMetalRates(ratesResult.data);
       } catch (error) {
-        console.error('Error fetching stats:', error);
+        console.error('Error fetching dashboard data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStats();
+    fetchData();
   }, []);
 
   const statCards = [
@@ -87,6 +77,11 @@ export default function DashboardPage() {
     },
   ];
 
+  const formatCurrency = (value) => {
+    if (!value) return '₹0';
+    return `₹${Number(value).toLocaleString('en-IN')}`;
+  };
+
   return (
     <div>
       <Typography
@@ -97,6 +92,7 @@ export default function DashboardPage() {
         Dashboard Overview
       </Typography>
 
+      {/* Stats Cards */}
       <Grid container spacing={3}>
         {statCards.map((card, index) => (
           <Grid item xs={12} sm={6} md={3} key={index}>
@@ -140,21 +136,154 @@ export default function DashboardPage() {
         ))}
       </Grid>
 
+      {/* Sales Stats */}
+      <Grid container spacing={3} sx={{ mt: 1 }}>
+        <Grid item xs={12} md={6}>
+          <Paper elevation={2} sx={{ p: 3, backgroundColor: 'white', borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <CalendarToday sx={{ color: '#1E1B4B' }} />
+              <Typography variant="h6" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                Today&apos;s Sales
+              </Typography>
+            </Box>
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <Typography variant="body2" sx={{ color: '#666' }}>Total Sales</Typography>
+                <Typography variant="h5" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                  {loading ? '...' : formatCurrency(stats.todaySales)}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="body2" sx={{ color: '#666' }}>Orders</Typography>
+                <Typography variant="h5" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                  {loading ? '...' : stats.todayOrders || 0}
+                </Typography>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Paper elevation={2} sx={{ p: 3, backgroundColor: 'white', borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <CalendarMonth sx={{ color: '#1E1B4B' }} />
+              <Typography variant="h6" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                This Month&apos;s Sales
+              </Typography>
+            </Box>
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <Typography variant="body2" sx={{ color: '#666' }}>Total Sales</Typography>
+                <Typography variant="h5" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                  {loading ? '...' : formatCurrency(stats.monthlySales)}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="body2" sx={{ color: '#666' }}>Orders</Typography>
+                <Typography variant="h5" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                  {loading ? '...' : stats.monthlyOrders || 0}
+                </Typography>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Current Metal Rates */}
       <Box sx={{ mt: 4 }}>
-        <Paper
-          elevation={2}
-          sx={{ p: 4, backgroundColor: 'white', borderRadius: 2 }}
-        >
-          <Typography
-            variant="h6"
-            className="font-bold mb-4"
-            sx={{ color: '#1E1B4B' }}
-          >
-            Quick Actions
-          </Typography>
-          <Typography variant="body1" sx={{ color: '#666' }}>
-            Welcome to DP Jewellers Admin Panel. Use the sidebar to navigate between different sections.
-          </Typography>
+        <Paper elevation={2} sx={{ p: 4, backgroundColor: 'white', borderRadius: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CurrencyRupee sx={{ color: '#1E1B4B' }} />
+              <Typography variant="h6" sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
+                Current Metal & Diamond Rates
+              </Typography>
+            </Box>
+            <Chip label="Read Only" size="small" variant="outlined" />
+          </Box>
+
+          {loading || !metalRates ? (
+            <Typography sx={{ color: '#666' }}>Loading rates...</Typography>
+          ) : (
+            <Grid container spacing={3}>
+              {/* Gold Rates */}
+              <Grid item xs={12} md={4}>
+                <Typography variant="subtitle2" sx={{ color: '#666', mb: 1.5, fontWeight: 'bold' }}>
+                  Gold (per gram)
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">24K Gold</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.gold?.['24K'])}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">22K Gold</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.gold?.['22K'])}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">18K Gold</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.gold?.['18K'])}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                    <Typography variant="body2">14K Gold</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.gold?.['14K'])}</Typography>
+                  </Box>
+                </Box>
+              </Grid>
+
+              {/* Silver & Platinum Rates */}
+              <Grid item xs={12} md={4}>
+                <Typography variant="subtitle2" sx={{ color: '#666', mb: 1.5, fontWeight: 'bold' }}>
+                  Silver & Platinum (per gram)
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">925 Sterling Silver</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.silver?.['925_sterling'])}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">999 Pure Silver</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.silver?.['999_pure'])}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                    <Typography variant="body2">950 Platinum</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.platinum?.['950'] || metalRates.platinum?.perGram)}</Typography>
+                  </Box>
+                </Box>
+              </Grid>
+
+              {/* Diamond Rates */}
+              <Grid item xs={12} md={4}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5 }}>
+                  <Diamond sx={{ fontSize: 18, color: '#666' }} />
+                  <Typography variant="subtitle2" sx={{ color: '#666', fontWeight: 'bold' }}>
+                    Diamond (per carat)
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">SI I-J</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.diamond?.SI_IJ)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">SI G-H</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.diamond?.SI_GH)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">VS G-H</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.diamond?.VS_GH)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5, borderBottom: '1px solid #eee' }}>
+                    <Typography variant="body2">VVS E-F</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.diamond?.VVS_EF)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                    <Typography variant="body2">IF D-F</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(metalRates.diamond?.IF_DEF)}</Typography>
+                  </Box>
+                </Box>
+              </Grid>
+            </Grid>
+          )}
         </Paper>
       </Box>
     </div>

@@ -233,9 +233,10 @@ function calculatePrice(product, rates, taxSettings, makingChargesConfig = {}) {
 
   const discount = pricing.discount || 0;
 
-  // Split GST: 3% on gold/diamond/gemstone value, 5% on making/wastage/labour charges
-  const jewelryTaxRate = taxSettings.gst?.jewelry || 3;
-  const makingTaxRate = taxSettings.gst?.makingCharges || 5;
+  // Use product-level tax if set, otherwise fall back to global tax settings
+  const productTax = product.tax || {};
+  const jewelryTaxRate = productTax.jewelryGst || taxSettings.gst?.jewelry || 3;
+  const makingTaxRate = productTax.makingGst || taxSettings.gst?.makingCharges || 5;
 
   const jewelryTaxableAmount = metalValue + diamondValue + gemstoneValue;
   const labourTaxableAmount = makingChargeAmount + wastageChargeAmount + stoneSettingCharges + designCharges;

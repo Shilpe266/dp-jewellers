@@ -1,0 +1,665 @@
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const admin = require("firebase-admin");
+
+const db = admin.firestore();
+const USERS = "users";
+const PRODUCTS = "products";
+
+// Verify the caller is authenticated
+function verifyAuth(auth) {
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  return auth;
+}
+
+// ============================================
+// USER PROFILE MANAGEMENT
+// ============================================
+
+/**
+ * Register a new user after Firebase Auth creates the account.
+ * Creates a Firestore document in the users collection.
+ */
+exports.registerUser = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const { name, email, phone } = request.data;
+
+  if (!name || !email) {
+    throw new HttpsError("invalid-argument", "name and email are required.");
+  }
+
+  const userRef = db.collection(USERS).doc(request.auth.uid);
+  const existingUser = await userRef.get();
+
+  if (existingUser.exists) {
+    throw new HttpsError("already-exists", "User profile already exists.");
+  }
+
+  const userData = {
+    name,
+    email,
+    phone: phone || "",
+    profilePicture: "",
+    addresses: [],
+    favorites: [],
+    cart: [],
+    isActive: true,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await userRef.set(userData);
+
+  return { userId: request.auth.uid, message: "User registered successfully." };
+});
+
+/**
+ * Get the authenticated user's profile
+ */
+exports.getUserProfile = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const userDoc = await db.collection(USERS).doc(request.auth.uid).get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  return { userId: userDoc.id, ...userDoc.data() };
+});
+
+/**
+ * Update the authenticated user's profile (name, phone, profilePicture)
+ */
+exports.updateUserProfile = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const { name, phone, profilePicture } = request.data;
+
+  const userRef = db.collection(USERS).doc(request.auth.uid);
+  const userDoc = await userRef.get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  const updateData = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (name !== undefined) updateData.name = name;
+  if (phone !== undefined) updateData.phone = phone;
+  if (profilePicture !== undefined) updateData.profilePicture = profilePicture;
+
+  await userRef.update(updateData);
+
+  return { userId: request.auth.uid, message: "Profile updated successfully." };
+});
+
+// ============================================
+// CART MANAGEMENT
+// ============================================
+
+/**
+ * Get cart items with enriched product details
+ */
+exports.getCart = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const userDoc = await db.collection(USERS).doc(request.auth.uid).get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  const cart = userDoc.data().cart || [];
+
+  if (cart.length === 0) {
+    return { cart: [], count: 0 };
+  }
+
+  // Fetch product details for each cart item
+  const enrichedCart = [];
+  for (const item of cart) {
+    const productDoc = await db.collection(PRODUCTS).doc(item.productId).get();
+    if (productDoc.exists) {
+      const product = productDoc.data();
+      enrichedCart.push({
+        productId: item.productId,
+        size: item.size,
+        quantity: item.quantity,
+        addedAt: item.addedAt,
+        name: product.name,
+        image: product.images?.[0]?.url || "",
+        finalPrice: product.pricing?.finalPrice || 0,
+      });
+    }
+  }
+
+  return { cart: enrichedCart, count: enrichedCart.length };
+});
+
+/**
+ * Update cart: add, update quantity, remove, or clear
+ */
+exports.updateCart = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const { action, productId, size, quantity } = request.data;
+
+  if (!action) {
+    throw new HttpsError("invalid-argument", "action is required.");
+  }
+
+  const validActions = ["add", "update", "remove", "clear"];
+  if (!validActions.includes(action)) {
+    throw new HttpsError("invalid-argument", `Invalid action. Must be one of: ${validActions.join(", ")}`);
+  }
+
+  if (action !== "clear" && !productId) {
+    throw new HttpsError("invalid-argument", "productId is required for this action.");
+  }
+
+  const userRef = db.collection(USERS).doc(request.auth.uid);
+  const userDoc = await userRef.get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  let cart = userDoc.data().cart || [];
+
+  switch (action) {
+    case "add": {
+      // Verify product exists and is active
+      const productDoc = await db.collection(PRODUCTS).doc(productId).get();
+      if (!productDoc.exists || !productDoc.data().isActive) {
+        throw new HttpsError("not-found", "Product not found or unavailable.");
+      }
+
+      cart.push({
+        productId,
+        size: size || null,
+        quantity: quantity || 1,
+        addedAt: new Date().toISOString(),
+      });
+      break;
+    }
+
+    case "update": {
+      const updateIndex = cart.findIndex(
+        (item) => item.productId === productId && item.size === size
+      );
+      if (updateIndex === -1) {
+        throw new HttpsError("not-found", "Item not found in cart.");
+      }
+      cart[updateIndex].quantity = quantity || 1;
+      break;
+    }
+
+    case "remove": {
+      const removeIndex = cart.findIndex(
+        (item) => item.productId === productId && item.size === size
+      );
+      if (removeIndex === -1) {
+        throw new HttpsError("not-found", "Item not found in cart.");
+      }
+      cart.splice(removeIndex, 1);
+      break;
+    }
+
+    case "clear": {
+      cart = [];
+      break;
+    }
+  }
+
+  await userRef.update({
+    cart,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { cart, count: cart.length, message: `Cart ${action} successful.` };
+});
+
+// ============================================
+// FAVORITES / WISHLIST
+// ============================================
+
+/**
+ * Get favorites with product details
+ */
+exports.getFavorites = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const userDoc = await db.collection(USERS).doc(request.auth.uid).get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  const favorites = userDoc.data().favorites || [];
+
+  if (favorites.length === 0) {
+    return { favorites: [], count: 0 };
+  }
+
+  // Fetch product details for each favorite
+  const enrichedFavorites = [];
+  for (const productId of favorites) {
+    const productDoc = await db.collection(PRODUCTS).doc(productId).get();
+    if (productDoc.exists) {
+      const product = productDoc.data();
+      enrichedFavorites.push({
+        productId,
+        name: product.name,
+        image: product.images?.[0]?.url || "",
+        finalPrice: product.pricing?.finalPrice || 0,
+        category: product.category,
+      });
+    }
+  }
+
+  return { favorites: enrichedFavorites, count: enrichedFavorites.length };
+});
+
+/**
+ * Update favorites: add or remove a product
+ */
+exports.updateFavorites = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const { action, productId } = request.data;
+
+  if (!action || !productId) {
+    throw new HttpsError("invalid-argument", "action and productId are required.");
+  }
+
+  const validActions = ["add", "remove"];
+  if (!validActions.includes(action)) {
+    throw new HttpsError("invalid-argument", `Invalid action. Must be one of: ${validActions.join(", ")}`);
+  }
+
+  const userRef = db.collection(USERS).doc(request.auth.uid);
+  const userDoc = await userRef.get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  let favorites = userDoc.data().favorites || [];
+
+  if (action === "add") {
+    // Verify product exists
+    const productDoc = await db.collection(PRODUCTS).doc(productId).get();
+    if (!productDoc.exists || !productDoc.data().isActive) {
+      throw new HttpsError("not-found", "Product not found or unavailable.");
+    }
+
+    if (!favorites.includes(productId)) {
+      favorites.push(productId);
+    }
+  } else if (action === "remove") {
+    favorites = favorites.filter((id) => id !== productId);
+  }
+
+  await userRef.update({
+    favorites,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { favorites, count: favorites.length, message: `Favorite ${action} successful.` };
+});
+
+// ============================================
+// ADDRESS MANAGEMENT
+// ============================================
+
+/**
+ * Get all addresses for the authenticated user
+ */
+exports.getAddresses = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const userDoc = await db.collection(USERS).doc(request.auth.uid).get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  const addresses = userDoc.data().addresses || [];
+
+  return { addresses, count: addresses.length };
+});
+
+/**
+ * Manage addresses: add, update, delete, or set default
+ */
+exports.manageAddress = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const { action, address, addressIndex } = request.data;
+
+  if (!action) {
+    throw new HttpsError("invalid-argument", "action is required.");
+  }
+
+  const validActions = ["add", "update", "delete", "setDefault"];
+  if (!validActions.includes(action)) {
+    throw new HttpsError("invalid-argument", `Invalid action. Must be one of: ${validActions.join(", ")}`);
+  }
+
+  const userRef = db.collection(USERS).doc(request.auth.uid);
+  const userDoc = await userRef.get();
+
+  if (!userDoc.exists) {
+    throw new HttpsError("not-found", "User profile not found.");
+  }
+
+  let addresses = userDoc.data().addresses || [];
+
+  switch (action) {
+    case "add": {
+      if (!address) {
+        throw new HttpsError("invalid-argument", "address object is required for add action.");
+      }
+
+      const newAddress = {
+        addressType: address.addressType || "home",
+        name: address.name || "",
+        contactNumber: address.contactNumber || "",
+        areaName: address.areaName || "",
+        completeAddress: address.completeAddress || "",
+        isDefault: addresses.length === 0, // First address is default
+        createdAt: new Date().toISOString(),
+      };
+
+      addresses.push(newAddress);
+      break;
+    }
+
+    case "update": {
+      if (addressIndex === undefined || addressIndex < 0 || addressIndex >= addresses.length) {
+        throw new HttpsError("invalid-argument", "Valid addressIndex is required for update action.");
+      }
+      if (!address) {
+        throw new HttpsError("invalid-argument", "address object is required for update action.");
+      }
+
+      addresses[addressIndex] = {
+        ...addresses[addressIndex],
+        ...address,
+        createdAt: addresses[addressIndex].createdAt, // Preserve original createdAt
+      };
+      break;
+    }
+
+    case "delete": {
+      if (addressIndex === undefined || addressIndex < 0 || addressIndex >= addresses.length) {
+        throw new HttpsError("invalid-argument", "Valid addressIndex is required for delete action.");
+      }
+
+      const wasDefault = addresses[addressIndex].isDefault;
+      addresses.splice(addressIndex, 1);
+
+      // If deleted address was default and there are remaining addresses, set first as default
+      if (wasDefault && addresses.length > 0) {
+        addresses[0].isDefault = true;
+      }
+      break;
+    }
+
+    case "setDefault": {
+      if (addressIndex === undefined || addressIndex < 0 || addressIndex >= addresses.length) {
+        throw new HttpsError("invalid-argument", "Valid addressIndex is required for setDefault action.");
+      }
+
+      addresses = addresses.map((addr, idx) => ({
+        ...addr,
+        isDefault: idx === addressIndex,
+      }));
+      break;
+    }
+  }
+
+  await userRef.update({
+    addresses,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { addresses, count: addresses.length, message: `Address ${action} successful.` };
+});
+
+// ============================================
+// PRODUCT SEARCH & BROWSING
+// ============================================
+
+/**
+ * Search products with filters, sorting, and pagination (public)
+ */
+exports.searchProducts = onCall({ region: "asia-south1" }, async (request) => {
+  const {
+    query,
+    category,
+    material,
+    minPrice,
+    maxPrice,
+    sortBy = "newest",
+    limit = 20,
+    startAfterDoc,
+  } = request.data || {};
+
+  let firestoreQuery = db.collection(PRODUCTS).where("isActive", "==", true);
+
+  if (category) {
+    firestoreQuery = firestoreQuery.where("category", "==", category);
+  }
+
+  if (material) {
+    firestoreQuery = firestoreQuery.where("metal.type", "==", material);
+  }
+
+  // Apply sorting
+  switch (sortBy) {
+    case "price_asc":
+      firestoreQuery = firestoreQuery.orderBy("pricing.finalPrice", "asc");
+      break;
+    case "price_desc":
+      firestoreQuery = firestoreQuery.orderBy("pricing.finalPrice", "desc");
+      break;
+    case "popular":
+      firestoreQuery = firestoreQuery.orderBy("purchaseCount", "desc");
+      break;
+    case "newest":
+    default:
+      firestoreQuery = firestoreQuery.orderBy("createdAt", "desc");
+      break;
+  }
+
+  // Pagination
+  if (startAfterDoc) {
+    const lastDoc = await db.collection(PRODUCTS).doc(startAfterDoc).get();
+    if (lastDoc.exists) {
+      firestoreQuery = firestoreQuery.startAfter(lastDoc);
+    }
+  }
+
+  firestoreQuery = firestoreQuery.limit(Math.min(limit, 50));
+
+  const snapshot = await firestoreQuery.get();
+  let products = snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      productId: doc.id,
+      name: data.name,
+      category: data.category,
+      image: data.images?.[0]?.url || "",
+      finalPrice: data.pricing?.finalPrice || 0,
+      metalType: data.metal?.type || "",
+    };
+  });
+
+  // Client-side text search filtering
+  if (query) {
+    const lowerQuery = query.toLowerCase();
+    products = products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(lowerQuery) ||
+        p.category.toLowerCase().includes(lowerQuery)
+    );
+  }
+
+  // Client-side price filtering
+  if (minPrice) {
+    products = products.filter((p) => p.finalPrice >= minPrice);
+  }
+  if (maxPrice) {
+    products = products.filter((p) => p.finalPrice <= maxPrice);
+  }
+
+  return {
+    products,
+    count: products.length,
+    lastDoc: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null,
+  };
+});
+
+/**
+ * Get products by category with pagination (public)
+ */
+exports.getProductsByCategory = onCall({ region: "asia-south1" }, async (request) => {
+  const { category, limit = 20, startAfterDoc } = request.data || {};
+
+  if (!category) {
+    throw new HttpsError("invalid-argument", "category is required.");
+  }
+
+  let query = db.collection(PRODUCTS)
+    .where("isActive", "==", true)
+    .where("category", "==", category)
+    .orderBy("createdAt", "desc");
+
+  if (startAfterDoc) {
+    const lastDoc = await db.collection(PRODUCTS).doc(startAfterDoc).get();
+    if (lastDoc.exists) {
+      query = query.startAfter(lastDoc);
+    }
+  }
+
+  query = query.limit(Math.min(limit, 50));
+
+  const snapshot = await query.get();
+  const products = snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      productId: doc.id,
+      name: data.name,
+      category: data.category,
+      image: data.images?.[0]?.url || "",
+      finalPrice: data.pricing?.finalPrice || 0,
+      metalType: data.metal?.type || "",
+    };
+  });
+
+  return {
+    products,
+    count: products.length,
+    lastDoc: snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null,
+  };
+});
+
+/**
+ * Get home page data: categories, featured products, popular products (public)
+ */
+exports.getHomePageData = onCall({ region: "asia-south1" }, async (_request) => {
+  // Fetch featured products
+  const featuredSnapshot = await db.collection(PRODUCTS)
+    .where("isActive", "==", true)
+    .where("featured", "==", true)
+    .limit(6)
+    .get();
+
+  const featured = featuredSnapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      productId: doc.id,
+      name: data.name,
+      category: data.category,
+      image: data.images?.[0]?.url || "",
+      finalPrice: data.pricing?.finalPrice || 0,
+      metalType: data.metal?.type || "",
+    };
+  });
+
+  // Fetch popular products
+  const popularSnapshot = await db.collection(PRODUCTS)
+    .where("isActive", "==", true)
+    .orderBy("purchaseCount", "desc")
+    .limit(8)
+    .get();
+
+  const popular = popularSnapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      productId: doc.id,
+      name: data.name,
+      category: data.category,
+      image: data.images?.[0]?.url || "",
+      finalPrice: data.pricing?.finalPrice || 0,
+      metalType: data.metal?.type || "",
+    };
+  });
+
+  // Get distinct categories from all active products
+  const categoriesSnapshot = await db.collection(PRODUCTS)
+    .where("isActive", "==", true)
+    .select("category")
+    .get();
+
+  const categoriesSet = new Set();
+  categoriesSnapshot.docs.forEach((doc) => {
+    const category = doc.data().category;
+    if (category) {
+      categoriesSet.add(category);
+    }
+  });
+
+  const categories = Array.from(categoriesSet).sort();
+
+  return {
+    categories,
+    featured,
+    popular,
+  };
+});
+
+// ============================================
+// CONTACT FORM
+// ============================================
+
+/**
+ * Submit a contact form message
+ */
+exports.submitContactForm = onCall({ region: "asia-south1" }, async (request) => {
+  verifyAuth(request.auth);
+
+  const { name, email, message } = request.data;
+
+  if (!name || !email || !message) {
+    throw new HttpsError("invalid-argument", "name, email, and message are required.");
+  }
+
+  const contactData = {
+    name,
+    email,
+    message,
+    userId: request.auth.uid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  const docRef = await db.collection("contactSubmissions").add(contactData);
+
+  return { submissionId: docRef.id, message: "Contact form submitted successfully." };
+});

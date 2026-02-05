@@ -67,10 +67,6 @@ exports.createOrder = onCall({ region: "asia-south1" }, async (request) => {
     throw new HttpsError("invalid-argument", "Store selection required for pickup.");
   }
 
-  // Fetch current rates for price snapshot
-  const ratesDoc = await db.collection("metalRates").doc("current").get();
-  const rates = ratesDoc.exists ? ratesDoc.data() : {};
-
   // Validate and build order items with current prices
   const orderItems = [];
   let subtotal = 0;
@@ -217,7 +213,7 @@ exports.createOrder = onCall({ region: "asia-south1" }, async (request) => {
 exports.updateOrderStatus = onCall({ region: "asia-south1" }, async (request) => {
   await verifyOrderAdmin(request.auth);
 
-  const { orderDocId, newStatus, note } = request.data;
+  const { orderDocId, newStatus, note, estimatedDeliveryDate, delayReason } = request.data;
 
   if (!orderDocId || !newStatus) {
     throw new HttpsError("invalid-argument", "orderDocId and newStatus are required.");
@@ -242,16 +238,41 @@ exports.updateOrderStatus = onCall({ region: "asia-south1" }, async (request) =>
     throw new HttpsError("failed-precondition", `Cannot update a ${currentOrder.orderStatus} order.`);
   }
 
+  const trackingNote = note || `Order ${newStatus}.`;
   const updateData = {
     orderStatus: newStatus,
     trackingUpdates: admin.firestore.FieldValue.arrayUnion({
       status: newStatus,
       timestamp: new Date(),
-      note: note || `Order ${newStatus}.`,
+      note: trackingNote,
       updatedBy: request.auth.uid,
     }),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+
+  // Handle estimated delivery date
+  if (estimatedDeliveryDate) {
+    const newDeliveryDate = new Date(estimatedDeliveryDate);
+    const currentDeliveryDate = currentOrder.estimatedDeliveryDate?.toDate
+      ? currentOrder.estimatedDeliveryDate.toDate()
+      : currentOrder.estimatedDeliveryDate
+        ? new Date(currentOrder.estimatedDeliveryDate)
+        : null;
+
+    updateData.estimatedDeliveryDate = newDeliveryDate;
+
+    // If delivery date changed and delay reason provided, store it
+    if (delayReason && currentDeliveryDate && newDeliveryDate > currentDeliveryDate) {
+      updateData.delayReason = delayReason;
+      updateData.delayHistory = admin.firestore.FieldValue.arrayUnion({
+        previousDate: currentDeliveryDate,
+        newDate: newDeliveryDate,
+        reason: delayReason,
+        updatedBy: request.auth.uid,
+        updatedAt: new Date(),
+      });
+    }
+  }
 
   if (newStatus === "confirmed") {
     updateData.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
@@ -279,6 +300,77 @@ exports.updateOrderStatus = onCall({ region: "asia-south1" }, async (request) =>
   await orderRef.update(updateData);
 
   return { orderDocId, newStatus, message: `Order status updated to ${newStatus}.` };
+});
+
+/**
+ * List all orders (admin only) with optional status filter
+ */
+exports.listOrders = onCall({ region: "asia-south1" }, async (request) => {
+  await verifyOrderAdmin(request.auth);
+
+  const { limit: queryLimit = 50, startAfterDoc, status } = request.data || {};
+
+  let ordersQuery = db.collection("orders")
+    .orderBy("orderedAt", "desc");
+
+  if (status) {
+    ordersQuery = ordersQuery.where("orderStatus", "==", status);
+  }
+
+  if (startAfterDoc) {
+    const lastDoc = await db.collection("orders").doc(startAfterDoc).get();
+    if (lastDoc.exists) {
+      ordersQuery = ordersQuery.startAfter(lastDoc);
+    }
+  }
+
+  ordersQuery = ordersQuery.limit(Math.min(queryLimit, 100));
+
+  const snapshot = await ordersQuery.get();
+  const orders = await Promise.all(
+    snapshot.docs.map(async (orderDoc) => {
+      const orderData = orderDoc.data();
+      let userName = "N/A";
+      let userPhone = "N/A";
+
+      if (orderData.userId) {
+        try {
+          const userDoc = await db.collection("users").doc(orderData.userId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            userName = userData.name || userData.email || "N/A";
+            userPhone = userData.phone || "N/A";
+          }
+        } catch (err) {
+          // Ignore user fetch errors
+        }
+      }
+
+      // Convert Firestore timestamps to ISO strings for frontend
+      const formatTimestamp = (ts) => {
+        if (!ts) return null;
+        if (ts.toDate) return ts.toDate().toISOString();
+        if (ts instanceof Date) return ts.toISOString();
+        return ts;
+      };
+
+      return {
+        id: orderDoc.id,
+        ...orderData,
+        userName,
+        userPhone,
+        createdAt: formatTimestamp(orderData.orderedAt),
+        orderedAt: formatTimestamp(orderData.orderedAt),
+        estimatedDeliveryDate: formatTimestamp(orderData.estimatedDeliveryDate),
+        confirmedAt: formatTimestamp(orderData.confirmedAt),
+        deliveredAt: formatTimestamp(orderData.deliveredAt),
+        status: orderData.orderStatus,
+        totalAmount: orderData.orderSummary?.totalAmount || 0,
+      };
+    })
+  );
+
+  return { orders, count: orders.length };
 });
 
 /**

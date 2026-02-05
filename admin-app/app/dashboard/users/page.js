@@ -4,12 +4,6 @@ import { useState, useEffect } from 'react';
 import {
   Paper,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Chip,
   IconButton,
   Dialog,
@@ -23,18 +17,14 @@ import {
   Alert,
   Box,
   Divider,
+  Tooltip,
 } from '@mui/material';
+import { DataGrid, GridToolbar } from '@mui/x-data-grid';
 import { Visibility, Edit, Delete, Block, CheckCircle } from '@mui/icons-material';
-import {
-  collection,
-  getDocs,
-  doc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import app from '@/lib/firebase';
+
+const functions = getFunctions(app, 'asia-south1');
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -55,56 +45,31 @@ export default function UsersPage() {
   });
 
   useEffect(() => {
-    // TEMPORARY: Disable Firebase fetch until it's configured
-    // TODO: Uncomment when Firebase is set up
-    // fetchUsers();
+    fetchUsers();
   }, []);
 
   const fetchUsers = async () => {
-    // TEMPORARY: Disable Firebase fetch until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
+    setLoading(true);
     try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      const usersList = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      // Sort by creation date (newest first)
-      usersList.sort((a, b) => {
-        const dateA = new Date(a.createdAt || 0);
-        const dateB = new Date(b.createdAt || 0);
-        return dateB - dateA;
-      });
-
-      setUsers(usersList);
+      const listUsers = httpsCallable(functions, 'listUsers');
+      const result = await listUsers({ limit: 100 });
+      setUsers(result.data.users || []);
     } catch (err) {
       console.error('Error fetching users:', err);
-      setError('Failed to load users');
+      setError('Failed to load users: ' + (err.message || ''));
+    } finally {
+      setLoading(false);
     }
-    */
   };
 
   const fetchUserOrders = async (userId) => {
-    // TEMPORARY: Disable Firebase fetch until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
     try {
-      const ordersQuery = query(
-        collection(db, 'orders'),
-        where('userId', '==', userId)
-      );
-      const snapshot = await getDocs(ordersQuery);
-      const ordersList = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setUserOrders(ordersList);
+      const getUserDetails = httpsCallable(functions, 'getUserDetails');
+      const result = await getUserDetails({ userId });
+      setUserOrders(result.data.orders || []);
     } catch (err) {
       console.error('Error fetching user orders:', err);
     }
-    */
   };
 
   const handleViewUser = async (user) => {
@@ -132,89 +97,64 @@ export default function UsersPage() {
     setError('');
     setSuccess('');
 
-    // TEMPORARY: Disable Firebase update until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
     try {
-      await updateDoc(doc(db, 'users', selectedUser.id), {
+      const updateUser = httpsCallable(functions, 'updateUser');
+      await updateUser({
+        userId: selectedUser.id,
         ...editFormData,
-        updatedAt: new Date().toISOString(),
       });
 
       setSuccess('User updated successfully!');
       setOpenEditDialog(false);
       fetchUsers();
     } catch (err) {
-      setError('Failed to update user');
+      setError('Failed to update user: ' + (err.message || ''));
       console.error(err);
     } finally {
       setLoading(false);
     }
-    */
-
-    // Demo mode - show success message without Firebase
-    setSuccess('User updated successfully! (Demo mode - not saved to Firebase)');
-    setLoading(false);
-    setOpenEditDialog(false);
   };
 
   const handleToggleUserStatus = async (user) => {
-    const newStatus = !user.isActive;
+    const newStatus = user.isActive === false;
     const action = newStatus ? 'activate' : 'deactivate';
 
     if (!confirm(`Are you sure you want to ${action} this user?`)) return;
 
     setLoading(true);
 
-    // TEMPORARY: Disable Firebase update until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
     try {
-      await updateDoc(doc(db, 'users', user.id), {
-        isActive: newStatus,
-        updatedAt: new Date().toISOString(),
-      });
+      const updateUser = httpsCallable(functions, 'updateUser');
+      await updateUser({ userId: user.id, isActive: newStatus });
 
       setSuccess(`User ${action}d successfully!`);
       fetchUsers();
     } catch (err) {
-      setError(`Failed to ${action} user`);
+      setError(`Failed to ${action} user: ` + (err.message || ''));
       console.error(err);
     } finally {
       setLoading(false);
     }
-    */
-
-    // Demo mode - show success message without Firebase
-    setSuccess(`User ${action}d successfully! (Demo mode - not saved to Firebase)`);
-    setLoading(false);
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    if (!confirm('Are you sure you want to deactivate this user?')) {
       return;
     }
 
     setLoading(true);
 
-    // TEMPORARY: Disable Firebase delete until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
     try {
-      await deleteDoc(doc(db, 'users', userId));
-      setSuccess('User deleted successfully!');
+      const deleteUser = httpsCallable(functions, 'deleteUser');
+      await deleteUser({ userId });
+      setSuccess('User deactivated successfully!');
       fetchUsers();
     } catch (err) {
-      setError('Failed to delete user');
+      setError('Failed to deactivate user: ' + (err.message || ''));
       console.error(err);
     } finally {
       setLoading(false);
     }
-    */
-
-    // Demo mode - show success message without Firebase
-    setSuccess('User deleted successfully! (Demo mode - not saved to Firebase)');
-    setLoading(false);
   };
 
   const formatDate = (dateString) => {
@@ -232,83 +172,97 @@ export default function UsersPage() {
         Users Management
       </Typography>
 
-      {success && <Alert severity="success" className="!mb-4">{success}</Alert>}
-      {error && <Alert severity="error" className="!mb-4">{error}</Alert>}
+      {success && <Alert severity="success" className="!mb-4" onClose={() => setSuccess('')}>{success}</Alert>}
+      {error && <Alert severity="error" className="!mb-4" onClose={() => setError('')}>{error}</Alert>}
 
       <Paper elevation={2} sx={{ backgroundColor: 'white', borderRadius: 2 }}>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Email</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Phone</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Joined Date</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    No users found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>{user.name || 'N/A'}</TableCell>
-                    <TableCell>{user.email || 'N/A'}</TableCell>
-                    <TableCell>{user.phone || 'N/A'}</TableCell>
-                    <TableCell>{formatDate(user.createdAt)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={user.isActive !== false ? 'Active' : 'Inactive'}
-                        color={user.isActive !== false ? 'success' : 'default'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleViewUser(user)}
-                        sx={{ color: '#1E1B4B', mr: 1 }}
-                        title="View Details"
-                      >
-                        <Visibility />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditUser(user)}
-                        sx={{ color: '#1E1B4B', mr: 1 }}
-                        title="Edit User"
-                      >
-                        <Edit />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleToggleUserStatus(user)}
-                        sx={{ color: user.isActive !== false ? '#FF9800' : '#4CAF50', mr: 1 }}
-                        title={user.isActive !== false ? 'Deactivate User' : 'Activate User'}
-                      >
-                        {user.isActive !== false ? <Block /> : <CheckCircle />}
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDeleteUser(user.id)}
-                        sx={{ color: '#d32f2f' }}
-                        title="Delete User"
-                      >
-                        <Delete />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <DataGrid
+          rows={users}
+          columns={[
+            { field: 'name', headerName: 'Name', flex: 1, minWidth: 150, sortable: true, valueGetter: (value, row) => row.name || 'N/A' },
+            { field: 'email', headerName: 'Email', flex: 1, minWidth: 180, sortable: true, valueGetter: (value, row) => row.email || 'N/A' },
+            { field: 'phone', headerName: 'Phone', width: 130, sortable: true, valueGetter: (value, row) => row.phone || 'N/A' },
+            {
+              field: 'createdAt',
+              headerName: 'Joined Date',
+              width: 130,
+              sortable: true,
+              valueGetter: (value, row) => row.createdAt ? new Date(row.createdAt) : null,
+              renderCell: (params) => formatDate(params.row.createdAt),
+            },
+            {
+              field: 'isActive',
+              headerName: 'Status',
+              width: 100,
+              sortable: true,
+              renderCell: (params) => (
+                <Chip
+                  label={params.row.isActive !== false ? 'Active' : 'Inactive'}
+                  color={params.row.isActive !== false ? 'success' : 'default'}
+                  size="small"
+                />
+              ),
+            },
+            {
+              field: 'actions',
+              headerName: 'Actions',
+              width: 180,
+              sortable: false,
+              filterable: false,
+              renderCell: (params) => (
+                <>
+                  <Tooltip title="View user profile and order history" arrow>
+                    <IconButton size="small" onClick={() => handleViewUser(params.row)} sx={{ color: '#1E1B4B', mr: 0.5 }}>
+                      <Visibility fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Edit user details (name, email, phone, address)" arrow>
+                    <IconButton size="small" onClick={() => handleEditUser(params.row)} sx={{ color: '#1E1B4B', mr: 0.5 }}>
+                      <Edit fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={params.row.isActive !== false ? 'Deactivate: User will not be able to login or place orders' : 'Activate: Restore user access to the app'} arrow>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleToggleUserStatus(params.row)}
+                      sx={{ color: params.row.isActive !== false ? '#FF9800' : '#4CAF50', mr: 0.5 }}
+                    >
+                      {params.row.isActive !== false ? <Block fontSize="small" /> : <CheckCircle fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Deactivate user account (soft delete)" arrow>
+                    <IconButton size="small" onClick={() => handleDeleteUser(params.row.id)} sx={{ color: '#d32f2f' }}>
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </>
+              ),
+            },
+          ]}
+          getRowId={(row) => row.id}
+          loading={loading && users.length === 0}
+          initialState={{
+            pagination: { paginationModel: { pageSize: 10 } },
+            sorting: { sortModel: [{ field: 'createdAt', sort: 'desc' }] },
+          }}
+          pageSizeOptions={[10, 25, 50]}
+          slots={{ toolbar: GridToolbar }}
+          slotProps={{
+            toolbar: {
+              showQuickFilter: true,
+              quickFilterProps: { debounceMs: 500 },
+            },
+          }}
+          disableRowSelectionOnClick
+          autoHeight
+          sx={{
+            border: 'none',
+            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f5f5f5', fontWeight: 'bold' },
+            '& .MuiDataGrid-row:hover': { backgroundColor: '#f9f9f9' },
+            '& .MuiDataGrid-toolbarContainer': { p: 2, gap: 2 },
+          }}
+          localeText={{ noRowsLabel: 'No users found' }}
+        />
       </Paper>
 
       {/* View User Dialog */}

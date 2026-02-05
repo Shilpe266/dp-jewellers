@@ -1,31 +1,104 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 import Sidebar from '@/components/Sidebar';
-import { AppBar, Toolbar, IconButton, Typography, Box } from '@mui/material';
+import { AppBar, Toolbar, IconButton, Typography, Box, Alert } from '@mui/material';
 import { Menu as MenuIcon } from '@mui/icons-material';
 
 const drawerWidth = 260;
 
+// Define route permissions
+const routePermissions = {
+  '/dashboard': { roles: ['super_admin', 'admin', 'editor'] },
+  '/dashboard/pricing': { roles: ['super_admin'], permission: 'manageRates' },
+  '/dashboard/products': { roles: ['super_admin', 'admin', 'editor'], permission: 'manageProducts' },
+  '/dashboard/orders': { roles: ['super_admin', 'admin'], permission: 'manageOrders' },
+  '/dashboard/stores': { roles: ['super_admin'] },
+  '/dashboard/users': { roles: ['super_admin'], permission: 'manageUsers' },
+  '/dashboard/admins': { roles: ['super_admin'] },
+  '/dashboard/support': { roles: ['super_admin', 'admin', 'editor'] },
+};
+
 export default function DashboardLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [adminData, setAdminData] = useState(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.push('/login');
       } else {
+        // Fetch admin data
+        try {
+          const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+          if (adminDoc.exists() && adminDoc.data().isActive) {
+            setAdminData(adminDoc.data());
+          } else {
+            // Not an admin, redirect to login
+            await auth.signOut();
+            router.push('/login');
+            return;
+          }
+        } catch (error) {
+          console.error('Error fetching admin data:', error);
+        }
         setLoading(false);
       }
     });
 
     return () => unsubscribe();
   }, [router]);
+
+  // Check route access whenever pathname or adminData changes
+  useEffect(() => {
+    if (!adminData || loading) return;
+
+    const checkAccess = () => {
+      const routeConfig = routePermissions[pathname];
+      if (!routeConfig) {
+        // Route not defined, allow access (for sub-routes)
+        setAccessDenied(false);
+        return;
+      }
+
+      const role = adminData.role || 'editor';
+      const permissions = adminData.permissions || {};
+
+      // Super admin has access to everything
+      if (role === 'super_admin') {
+        setAccessDenied(false);
+        return;
+      }
+
+      // Check if role is allowed
+      if (routeConfig.roles && routeConfig.roles.includes(role)) {
+        // If route has permission requirement, check it
+        if (routeConfig.permission) {
+          if (permissions[routeConfig.permission] === true) {
+            setAccessDenied(false);
+            return;
+          }
+        } else {
+          setAccessDenied(false);
+          return;
+        }
+      }
+
+      // Access denied - redirect to dashboard
+      setAccessDenied(true);
+      router.push('/dashboard');
+    };
+
+    checkAccess();
+  }, [pathname, adminData, loading, router]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -68,7 +141,7 @@ export default function DashboardLayout({ children }) {
       </AppBar>
 
       {/* Sidebar */}
-      <Sidebar mobileOpen={mobileOpen} handleDrawerToggle={handleDrawerToggle} />
+      <Sidebar mobileOpen={mobileOpen} handleDrawerToggle={handleDrawerToggle} adminData={adminData} />
 
       {/* Main Content */}
       <Box
@@ -80,6 +153,11 @@ export default function DashboardLayout({ children }) {
           mt: 8,
         }}
       >
+        {accessDenied && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            You do not have permission to access that page. Redirecting to dashboard.
+          </Alert>
+        )}
         {children}
       </Box>
     </Box>

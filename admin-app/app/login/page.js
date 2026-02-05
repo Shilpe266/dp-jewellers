@@ -2,18 +2,51 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { TextField, Button, Paper, Typography, Alert } from '@mui/material';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import {
+  TextField,
+  Button,
+  Paper,
+  Typography,
+  Alert,
+  IconButton,
+  InputAdornment,
+} from '@mui/material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+      setShowForgotPassword(false);
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        setError('No account found with this email.');
+      } else {
+        setError('Failed to send reset email. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -74,6 +107,12 @@ export default function LoginPage() {
           </Alert>
         )}
 
+        {resetSent && (
+          <Alert severity="success" className="mb-4" onClose={() => setResetSent(false)}>
+            Password reset email sent! Check your inbox and follow the link to set a new password.
+          </Alert>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-4">
           <TextField
             fullWidth
@@ -98,11 +137,26 @@ export default function LoginPage() {
           <TextField
             fullWidth
             label="Password"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             variant="outlined"
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <Visibility /> : <VisibilityOff />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
             sx={{
               '& .MuiOutlinedInput-root': {
                 '&.Mui-focused fieldset': {
@@ -134,18 +188,21 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
-          <Typography variant="body2" sx={{ color: '#666' }}>
-            Don't have an account?{' '}
-            <Link
-              href="/register"
-              className="font-semibold"
-              style={{ color: '#1E1B4B' }}
-            >
-              Register here
-            </Link>
-          </Typography>
-        </div>
+        <Button
+          fullWidth
+          onClick={handleForgotPassword}
+          disabled={loading}
+          sx={{
+            mt: 2,
+            color: '#1E1B4B',
+            textTransform: 'none',
+            fontSize: '14px',
+            '&:hover': { backgroundColor: 'transparent', textDecoration: 'underline' },
+          }}
+        >
+          Forgot Password?
+        </Button>
+
       </Paper>
     </div>
   );

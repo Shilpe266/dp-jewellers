@@ -4,12 +4,6 @@ import { useState, useEffect } from 'react';
 import {
   Paper,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Chip,
   IconButton,
   Dialog,
@@ -23,16 +17,15 @@ import {
   Alert,
   Box,
   Divider,
+  CircularProgress,
+  Tooltip,
 } from '@mui/material';
-import { Visibility, GetApp, Edit } from '@mui/icons-material';
-import {
-  collection,
-  getDocs,
-  doc,
-  updateDoc,
-  getDoc,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import { Visibility, GetApp, Edit, Store, LocalShipping } from '@mui/icons-material';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import app from '@/lib/firebase';
+
+const functions = getFunctions(app, 'asia-south1');
 
 const orderStatuses = [
   'pending',
@@ -58,68 +51,56 @@ const statusColors = {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
+  const [stores, setStores] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [newStatus, setNewStatus] = useState('');
+  const [estimatedDeliveryDate, setEstimatedDeliveryDate] = useState('');
+  const [delayReason, setDelayReason] = useState('');
+  const [originalDeliveryDate, setOriginalDeliveryDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // TEMPORARY: Disable Firebase fetch until it's configured
-    // TODO: Uncomment when Firebase is set up
-    // fetchOrders();
+    fetchOrders();
+    fetchStores();
   }, []);
 
   const fetchOrders = async () => {
-    // TEMPORARY: Disable Firebase fetch until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
+    setLoading(true);
     try {
-      const snapshot = await getDocs(collection(db, 'orders'));
-      const ordersList = await Promise.all(
-        snapshot.docs.map(async (orderDoc) => {
-          const orderData = orderDoc.data();
-
-          // Fetch user details
-          let userName = 'N/A';
-          let userPhone = 'N/A';
-          if (orderData.userId) {
-            try {
-              const userDoc = await getDoc(doc(db, 'users', orderData.userId));
-              if (userDoc.exists()) {
-                const userData = userDoc.data();
-                userName = userData.name || userData.email || 'N/A';
-                userPhone = userData.phone || 'N/A';
-              }
-            } catch (err) {
-              console.error('Error fetching user:', err);
-            }
-          }
-
-          return {
-            id: orderDoc.id,
-            ...orderData,
-            userName,
-            userPhone,
-          };
-        })
-      );
-
-      // Sort by creation date (newest first)
-      ordersList.sort((a, b) => {
-        const dateA = new Date(a.createdAt || 0);
-        const dateB = new Date(b.createdAt || 0);
-        return dateB - dateA;
-      });
-
-      setOrders(ordersList);
+      const listOrders = httpsCallable(functions, 'listOrders');
+      const result = await listOrders({ limit: 100 });
+      setOrders(result.data.orders || []);
     } catch (err) {
       console.error('Error fetching orders:', err);
-      setError('Failed to load orders');
+      setError('Failed to load orders: ' + (err.message || ''));
+    } finally {
+      setLoading(false);
     }
-    */
+  };
+
+  const fetchStores = async () => {
+    try {
+      const listStores = httpsCallable(functions, 'listStores');
+      const result = await listStores();
+      setStores(result.data.stores || []);
+    } catch (err) {
+      console.error('Error fetching stores:', err);
+    }
+  };
+
+  const getStoreName = (storeId) => {
+    const store = stores.find((s) => s.id === storeId);
+    return store ? store.name : storeId || 'N/A';
+  };
+
+  const getStoreAddress = (storeId) => {
+    const store = stores.find((s) => s.id === storeId);
+    if (!store) return null;
+    return `${store.address}, ${store.city}, ${store.state} - ${store.pincode}`;
   };
 
   const handleViewOrder = (order) => {
@@ -129,7 +110,13 @@ export default function OrdersPage() {
 
   const handleEditStatus = (order) => {
     setSelectedOrder(order);
-    setNewStatus(order.status || 'pending');
+    setNewStatus(order.status || order.orderStatus || 'pending');
+    const currentDeliveryDate = order.estimatedDeliveryDate
+      ? new Date(order.estimatedDeliveryDate).toISOString().split('T')[0]
+      : '';
+    setEstimatedDeliveryDate(currentDeliveryDate);
+    setOriginalDeliveryDate(currentDeliveryDate);
+    setDelayReason('');
     setOpenEditDialog(true);
   };
 
@@ -140,41 +127,54 @@ export default function OrdersPage() {
     setError('');
     setSuccess('');
 
-    // TEMPORARY: Disable Firebase update until it's configured
-    // TODO: Uncomment when Firebase is set up
-    /*
     try {
-      await updateDoc(doc(db, 'orders', selectedOrder.id), {
-        status: newStatus,
-        updatedAt: new Date().toISOString(),
-      });
+      const updateOrderStatus = httpsCallable(functions, 'updateOrderStatus');
 
-      setSuccess('Order status updated successfully!');
+      const updateData = {
+        orderDocId: selectedOrder.id,
+        newStatus,
+        note: '',
+      };
+
+      // Add estimated delivery date if provided
+      if (estimatedDeliveryDate) {
+        updateData.estimatedDeliveryDate = estimatedDeliveryDate;
+      }
+
+      // Add delay reason if delivery date was changed
+      if (estimatedDeliveryDate && originalDeliveryDate && estimatedDeliveryDate !== originalDeliveryDate && delayReason) {
+        updateData.delayReason = delayReason;
+        updateData.note = `Delivery date changed. Reason: ${delayReason}`;
+      }
+
+      await updateOrderStatus(updateData);
+
+      setSuccess('Order updated successfully!');
       setOpenEditDialog(false);
       fetchOrders();
     } catch (err) {
-      setError('Failed to update order status');
+      setError('Failed to update order: ' + (err.message || ''));
       console.error(err);
     } finally {
       setLoading(false);
     }
-    */
-
-    // Demo mode - show success message without Firebase
-    setSuccess('Order status updated successfully! (Demo mode - not saved to Firebase)');
-    setLoading(false);
-    setOpenEditDialog(false);
   };
 
   const handleDownloadReceipt = (order) => {
-    // Generate a simple receipt
+    const storeName = order.deliveryType === 'pickup' || order.deliveryType === 'store_pickup'
+      ? getStoreName(order.selectedStore)
+      : null;
+    const storeAddress = order.deliveryType === 'pickup' || order.deliveryType === 'store_pickup'
+      ? getStoreAddress(order.selectedStore)
+      : null;
+
     const receiptContent = `
 DP Jewellers - Order Receipt
 ============================
 
-Order ID: ${order.id}
-Order Date: ${new Date(order.createdAt).toLocaleDateString()}
-Status: ${order.status?.toUpperCase()}
+Order ID: ${order.orderId || order.id}
+Order Date: ${new Date(order.createdAt || order.orderedAt).toLocaleDateString()}
+Status: ${(order.status || order.orderStatus)?.toUpperCase()}
 
 Customer Details:
 -----------------
@@ -185,25 +185,28 @@ Order Details:
 --------------
 ${order.items?.map((item, index) => `
 ${index + 1}. ${item.productName || 'Product'}
-   SKU: ${item.sku || 'N/A'}
+   SKU: ${item.sku || item.productCode || 'N/A'}
    Quantity: ${item.quantity || 1}
-   Price: ₹${item.price || 0}
+   Price: ₹${item.price || item.priceSnapshot?.itemTotal || 0}
 `).join('\n')}
 
-Delivery Type: ${order.deliveryType === 'pickup' ? 'Store Pickup' : 'Home Delivery'}
-${order.deliveryType === 'delivery' ? `Delivery Address: ${order.deliveryAddress || 'N/A'}` : ''}
+Delivery Type: ${order.deliveryType === 'pickup' || order.deliveryType === 'store_pickup' ? 'Store Pickup' : 'Home Delivery'}
+${order.deliveryType === 'pickup' || order.deliveryType === 'store_pickup'
+  ? `Pickup Store: ${storeName}\nStore Address: ${storeAddress || 'N/A'}`
+  : `Delivery Address: ${formatAddress(order.shippingAddress || order.deliveryAddress)}`}
 
-Total Amount: ₹${order.totalAmount || 0}
+${order.estimatedDeliveryDate ? `Estimated Delivery: ${new Date(order.estimatedDeliveryDate).toLocaleDateString()}` : ''}
+
+Total Amount: ₹${order.totalAmount || order.orderSummary?.totalAmount || 0}
 
 Thank you for shopping with DP Jewellers!
     `;
 
-    // Create a blob and download
     const blob = new Blob([receiptContent], { type: 'text/plain' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt_${order.id}.txt`;
+    a.download = `receipt_${order.orderId || order.id}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -212,7 +215,8 @@ Thank you for shopping with DP Jewellers!
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-IN', {
+    const date = dateString?.toDate ? dateString.toDate() : new Date(dateString);
+    return date.toLocaleDateString('en-IN', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -221,94 +225,171 @@ Thank you for shopping with DP Jewellers!
     });
   };
 
+  const formatDateOnly = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = dateString?.toDate ? dateString.toDate() : new Date(dateString);
+    return date.toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const formatAddress = (address) => {
+    if (!address) return 'N/A';
+    if (typeof address === 'string') return address;
+    // Handle address object
+    const parts = [
+      address.addressLine1,
+      address.addressLine2,
+      address.landmark,
+      address.city,
+      address.state,
+      address.pincode,
+    ].filter(Boolean);
+    return parts.join(', ') || 'N/A';
+  };
+
   return (
     <div>
       <Typography variant="h4" className="font-bold mb-6" sx={{ color: '#1E1B4B' }}>
         Orders Management
       </Typography>
 
-      {success && <Alert severity="success" className="!mb-4">{success}</Alert>}
-      {error && <Alert severity="error" className="!mb-4">{error}</Alert>}
+      {success && <Alert severity="success" className="!mb-4" onClose={() => setSuccess('')}>{success}</Alert>}
+      {error && <Alert severity="error" className="!mb-4" onClose={() => setError('')}>{error}</Alert>}
 
       <Paper elevation={2} sx={{ backgroundColor: 'white', borderRadius: 2 }}>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 'bold' }}>Order ID</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Customer</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Date</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Amount</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Delivery</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {orders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    No orders found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                orders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell>#{order.id.slice(-8).toUpperCase()}</TableCell>
-                    <TableCell>
-                      <div>{order.userName}</div>
-                      <Typography variant="caption" sx={{ color: '#666' }}>
-                        {order.userPhone}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{formatDate(order.createdAt)}</TableCell>
-                    <TableCell>₹{order.totalAmount || 0}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={order.deliveryType === 'pickup' ? 'Pickup' : 'Delivery'}
-                        size="small"
-                        variant="outlined"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={order.status?.replace('_', ' ').toUpperCase() || 'PENDING'}
-                        color={statusColors[order.status] || 'default'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleViewOrder(order)}
-                        sx={{ color: '#1E1B4B', mr: 1 }}
-                        title="View Details"
-                      >
-                        <Visibility />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditStatus(order)}
-                        sx={{ color: '#1E1B4B', mr: 1 }}
-                        title="Update Status"
-                      >
-                        <Edit />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDownloadReceipt(order)}
-                        sx={{ color: '#1E1B4B' }}
-                        title="Download Receipt"
-                      >
-                        <GetApp />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <DataGrid
+          rows={orders}
+          columns={[
+            {
+              field: 'orderId',
+              headerName: 'Order ID',
+              width: 140,
+              sortable: true,
+              valueGetter: (value, row) => row.orderId || row.id?.slice(-8).toUpperCase() || '',
+              renderCell: (params) => `#${params.row.orderId || params.row.id?.slice(-8).toUpperCase()}`,
+            },
+            {
+              field: 'customer',
+              headerName: 'Customer',
+              flex: 1,
+              minWidth: 150,
+              sortable: true,
+              valueGetter: (value, row) => row.userName || '',
+              renderCell: (params) => (
+                <Box>
+                  <div>{params.row.userName}</div>
+                  <Typography variant="caption" sx={{ color: '#666' }}>
+                    {params.row.userPhone}
+                  </Typography>
+                </Box>
+              ),
+            },
+            {
+              field: 'createdAt',
+              headerName: 'Order Date',
+              width: 160,
+              sortable: true,
+              valueGetter: (value, row) => row.createdAt || row.orderedAt ? new Date(row.createdAt || row.orderedAt) : null,
+              renderCell: (params) => formatDate(params.row.createdAt || params.row.orderedAt),
+            },
+            {
+              field: 'estimatedDeliveryDate',
+              headerName: 'Est. Delivery',
+              width: 120,
+              sortable: true,
+              valueGetter: (value, row) => row.estimatedDeliveryDate ? new Date(row.estimatedDeliveryDate) : null,
+              renderCell: (params) => formatDateOnly(params.row.estimatedDeliveryDate),
+            },
+            {
+              field: 'totalAmount',
+              headerName: 'Amount',
+              width: 120,
+              sortable: true,
+              valueGetter: (value, row) => row.totalAmount || row.orderSummary?.totalAmount || 0,
+              renderCell: (params) => `₹${(params.row.totalAmount || params.row.orderSummary?.totalAmount || 0).toLocaleString('en-IN')}`,
+            },
+            {
+              field: 'deliveryType',
+              headerName: 'Delivery',
+              width: 100,
+              sortable: true,
+              renderCell: (params) => (
+                <Chip
+                  icon={params.row.deliveryType === 'pickup' || params.row.deliveryType === 'store_pickup' ? <Store fontSize="small" /> : <LocalShipping fontSize="small" />}
+                  label={params.row.deliveryType === 'pickup' || params.row.deliveryType === 'store_pickup' ? 'Pickup' : 'Delivery'}
+                  size="small"
+                  variant="outlined"
+                />
+              ),
+            },
+            {
+              field: 'status',
+              headerName: 'Status',
+              width: 140,
+              sortable: true,
+              valueGetter: (value, row) => row.status || row.orderStatus || 'pending',
+              renderCell: (params) => (
+                <Chip
+                  label={(params.row.status || params.row.orderStatus)?.replace('_', ' ').toUpperCase() || 'PENDING'}
+                  color={statusColors[params.row.status || params.row.orderStatus] || 'default'}
+                  size="small"
+                />
+              ),
+            },
+            {
+              field: 'actions',
+              headerName: 'Actions',
+              width: 140,
+              sortable: false,
+              filterable: false,
+              renderCell: (params) => (
+                <>
+                  <Tooltip title="View order details, items, and tracking history" arrow>
+                    <IconButton size="small" onClick={() => handleViewOrder(params.row)} sx={{ color: '#1E1B4B', mr: 0.5 }}>
+                      <Visibility fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Update order status and delivery date" arrow>
+                    <IconButton size="small" onClick={() => handleEditStatus(params.row)} sx={{ color: '#1E1B4B', mr: 0.5 }}>
+                      <Edit fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Download order receipt as text file" arrow>
+                    <IconButton size="small" onClick={() => handleDownloadReceipt(params.row)} sx={{ color: '#1E1B4B' }}>
+                      <GetApp fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </>
+              ),
+            },
+          ]}
+          getRowId={(row) => row.id}
+          loading={loading && orders.length === 0}
+          initialState={{
+            pagination: { paginationModel: { pageSize: 10 } },
+            sorting: { sortModel: [{ field: 'createdAt', sort: 'desc' }] },
+          }}
+          pageSizeOptions={[10, 25, 50]}
+          slots={{ toolbar: GridToolbar }}
+          slotProps={{
+            toolbar: {
+              showQuickFilter: true,
+              quickFilterProps: { debounceMs: 500 },
+            },
+          }}
+          disableRowSelectionOnClick
+          autoHeight
+          sx={{
+            border: 'none',
+            '& .MuiDataGrid-columnHeaders': { backgroundColor: '#f5f5f5', fontWeight: 'bold' },
+            '& .MuiDataGrid-row:hover': { backgroundColor: '#f9f9f9' },
+            '& .MuiDataGrid-toolbarContainer': { p: 2, gap: 2 },
+          }}
+          localeText={{ noRowsLabel: 'No orders found' }}
+        />
       </Paper>
 
       {/* View Order Dialog */}
@@ -330,7 +411,7 @@ Thank you for shopping with DP Jewellers!
                     Order ID
                   </Typography>
                   <Typography variant="body1" className="font-semibold">
-                    #{selectedOrder.id.slice(-8).toUpperCase()}
+                    #{selectedOrder.orderId || selectedOrder.id.slice(-8).toUpperCase()}
                   </Typography>
                 </Grid>
 
@@ -339,7 +420,7 @@ Thank you for shopping with DP Jewellers!
                     Order Date
                   </Typography>
                   <Typography variant="body1" className="font-semibold">
-                    {formatDate(selectedOrder.createdAt)}
+                    {formatDate(selectedOrder.createdAt || selectedOrder.orderedAt)}
                   </Typography>
                 </Grid>
 
@@ -365,9 +446,16 @@ Thank you for shopping with DP Jewellers!
                   <Typography variant="body2" sx={{ color: '#666' }}>
                     Delivery Type
                   </Typography>
-                  <Typography variant="body1" className="font-semibold">
-                    {selectedOrder.deliveryType === 'pickup' ? 'Store Pickup' : 'Home Delivery'}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {selectedOrder.deliveryType === 'pickup' || selectedOrder.deliveryType === 'store_pickup' ? (
+                      <Store fontSize="small" sx={{ color: '#1E1B4B' }} />
+                    ) : (
+                      <LocalShipping fontSize="small" sx={{ color: '#1E1B4B' }} />
+                    )}
+                    <Typography variant="body1" className="font-semibold">
+                      {selectedOrder.deliveryType === 'pickup' || selectedOrder.deliveryType === 'store_pickup' ? 'Store Pickup' : 'Home Delivery'}
+                    </Typography>
+                  </Box>
                 </Grid>
 
                 <Grid item xs={12} sm={6}>
@@ -375,19 +463,59 @@ Thank you for shopping with DP Jewellers!
                     Status
                   </Typography>
                   <Chip
-                    label={selectedOrder.status?.replace('_', ' ').toUpperCase() || 'PENDING'}
-                    color={statusColors[selectedOrder.status] || 'default'}
+                    label={(selectedOrder.status || selectedOrder.orderStatus)?.replace('_', ' ').toUpperCase() || 'PENDING'}
+                    color={statusColors[selectedOrder.status || selectedOrder.orderStatus] || 'default'}
                     size="small"
                   />
                 </Grid>
 
-                {selectedOrder.deliveryType === 'delivery' && selectedOrder.deliveryAddress && (
+                {/* Estimated Delivery Date */}
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="body2" sx={{ color: '#666' }}>
+                    Estimated Delivery Date
+                  </Typography>
+                  <Typography variant="body1" className="font-semibold">
+                    {selectedOrder.estimatedDeliveryDate ? formatDateOnly(selectedOrder.estimatedDeliveryDate) : 'Not set'}
+                  </Typography>
+                </Grid>
+
+                {/* Delay Reason if exists */}
+                {selectedOrder.delayReason && (
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" sx={{ color: '#666' }}>
+                      Delay Reason
+                    </Typography>
+                    <Typography variant="body1" className="font-semibold" sx={{ color: '#d32f2f' }}>
+                      {selectedOrder.delayReason}
+                    </Typography>
+                  </Grid>
+                )}
+
+                {/* Store Details for Pickup */}
+                {(selectedOrder.deliveryType === 'pickup' || selectedOrder.deliveryType === 'store_pickup') && (
+                  <Grid item xs={12}>
+                    <Typography variant="body2" sx={{ color: '#666' }}>
+                      Pickup Store
+                    </Typography>
+                    <Typography variant="body1" className="font-semibold">
+                      {getStoreName(selectedOrder.selectedStore)}
+                    </Typography>
+                    {getStoreAddress(selectedOrder.selectedStore) && (
+                      <Typography variant="body2" sx={{ color: '#666', mt: 0.5 }}>
+                        {getStoreAddress(selectedOrder.selectedStore)}
+                      </Typography>
+                    )}
+                  </Grid>
+                )}
+
+                {/* Delivery Address for Home Delivery */}
+                {(selectedOrder.deliveryType === 'delivery' || selectedOrder.deliveryType === 'home_delivery') && (
                   <Grid item xs={12}>
                     <Typography variant="body2" sx={{ color: '#666' }}>
                       Delivery Address
                     </Typography>
                     <Typography variant="body1" className="font-semibold">
-                      {selectedOrder.deliveryAddress}
+                      {formatAddress(selectedOrder.shippingAddress || selectedOrder.deliveryAddress)}
                     </Typography>
                   </Grid>
                 )}
@@ -415,10 +543,10 @@ Thank you for shopping with DP Jewellers!
                         {item.productName || 'Product'}
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#666' }}>
-                        SKU: {item.sku || 'N/A'}
+                        SKU: {item.sku || item.productCode || 'N/A'}
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#666' }}>
-                        Quantity: {item.quantity || 1} | Price: ₹{item.price || 0}
+                        Quantity: {item.quantity || 1} | Price: ₹{item.price || item.priceSnapshot?.itemTotal || 0}
                       </Typography>
                     </Box>
                   ))}
@@ -429,6 +557,44 @@ Thank you for shopping with DP Jewellers!
                 </Typography>
               )}
 
+              {/* Tracking Updates / Order History */}
+              {selectedOrder.trackingUpdates && selectedOrder.trackingUpdates.length > 0 && (
+                <>
+                  <Divider sx={{ my: 3 }} />
+                  <Typography variant="h6" className="font-bold mb-3" sx={{ color: '#1E1B4B' }}>
+                    Order History
+                  </Typography>
+                  <Box>
+                    {selectedOrder.trackingUpdates.map((update, index) => (
+                      <Box
+                        key={index}
+                        sx={{
+                          p: 2,
+                          mb: 1,
+                          backgroundColor: '#F5F5F5',
+                          borderRadius: 2,
+                          borderLeft: `3px solid ${statusColors[update.status] === 'success' ? '#4caf50' : statusColors[update.status] === 'error' ? '#d32f2f' : '#1E1B4B'}`,
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Typography variant="body1" className="font-semibold">
+                            {update.status?.replace('_', ' ').toUpperCase()}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#666' }}>
+                            {formatDate(update.timestamp)}
+                          </Typography>
+                        </Box>
+                        {update.note && (
+                          <Typography variant="body2" sx={{ color: '#666', mt: 0.5 }}>
+                            {update.note}
+                          </Typography>
+                        )}
+                      </Box>
+                    ))}
+                  </Box>
+                </>
+              )}
+
               <Divider sx={{ my: 3 }} />
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -436,7 +602,7 @@ Thank you for shopping with DP Jewellers!
                   Total Amount
                 </Typography>
                 <Typography variant="h5" className="font-bold" sx={{ color: '#1E1B4B' }}>
-                  ₹{selectedOrder.totalAmount || 0}
+                  ₹{(selectedOrder.totalAmount || selectedOrder.orderSummary?.totalAmount || 0).toLocaleString('en-IN')}
                 </Typography>
               </Box>
             </Box>
@@ -464,7 +630,7 @@ Thank you for shopping with DP Jewellers!
         </DialogActions>
       </Dialog>
 
-      {/* Edit Status Dialog */}
+      {/* Edit Order Dialog */}
       <Dialog
         open={openEditDialog}
         onClose={() => setOpenEditDialog(false)}
@@ -472,25 +638,62 @@ Thank you for shopping with DP Jewellers!
         fullWidth
       >
         <DialogTitle sx={{ color: '#1E1B4B', fontWeight: 'bold' }}>
-          Update Order Status
+          Update Order
         </DialogTitle>
         <DialogContent>
-          <TextField
-            fullWidth
-            size="small"
-            select
-            label="Order Status"
-            value={newStatus || ''}
-            onChange={(e) => setNewStatus(e.target.value)}
-            variant="outlined"
-            sx={{ mt: 2, minWidth: '200px' }}
-          >
-            {orderStatuses.map((status) => (
-              <MenuItem key={status} value={status}>
-                {status.replace('_', ' ').toUpperCase()}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                size="small"
+                select
+                label="Order Status"
+                value={newStatus || ''}
+                onChange={(e) => setNewStatus(e.target.value)}
+                variant="outlined"
+              >
+                {orderStatuses.map((status) => (
+                  <MenuItem key={status} value={status}>
+                    {status.replace('_', ' ').toUpperCase()}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="Estimated Delivery Date"
+                value={estimatedDeliveryDate}
+                onChange={(e) => setEstimatedDeliveryDate(e.target.value)}
+                variant="outlined"
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+
+            {/* Show delay reason field when delivery date is changed */}
+            {originalDeliveryDate && estimatedDeliveryDate && estimatedDeliveryDate !== originalDeliveryDate && (
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  You are changing the delivery date. Please provide a reason.
+                </Alert>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Reason for Delay"
+                  value={delayReason}
+                  onChange={(e) => setDelayReason(e.target.value)}
+                  variant="outlined"
+                  multiline
+                  rows={2}
+                  placeholder="e.g., Supplier delay, Custom design processing, etc."
+                  required
+                />
+              </Grid>
+            )}
+          </Grid>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button
@@ -502,14 +705,14 @@ Thank you for shopping with DP Jewellers!
           <Button
             onClick={handleUpdateStatus}
             variant="contained"
-            disabled={loading}
+            disabled={loading || (originalDeliveryDate && estimatedDeliveryDate && estimatedDeliveryDate !== originalDeliveryDate && !delayReason)}
             sx={{
               backgroundColor: '#1E1B4B',
               '&:hover': { backgroundColor: '#2D2963' },
               textTransform: 'none',
             }}
           >
-            {loading ? 'Updating...' : 'Update Status'}
+            {loading ? <CircularProgress size={20} sx={{ color: 'white' }} /> : 'Update Order'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,0 +1,225 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is an admin by looking up the admins collection
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isActive == true;
+    }
+
+    // Check if user is a super admin
+    function isSuperAdmin() {
+      return isAdmin() &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    // Check if admin has a specific permission
+    function hasPermission(permission) {
+      return isAdmin() &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.permissions[permission] == true;
+    }
+
+    // Check if the user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ============================================
+    // USERS COLLECTION
+    // ============================================
+    match /users/{userId} {
+      // Users can read their own data; admins can read any user
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Users can create their own profile
+      allow create: if isOwner(userId);
+
+      // Users can update their own profile; admins can update any user
+      allow update: if isOwner(userId) || hasPermission('manageUsers');
+
+      // Only super admins can delete users
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // ADMINS COLLECTION
+    // ============================================
+    match /admins/{adminId} {
+      // Admins can read their own data; super admins can read all
+      allow read: if isOwner(adminId) || isSuperAdmin();
+
+      // Only super admins can create/update/delete admin accounts
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // PRODUCTS COLLECTION
+    // ============================================
+    match /products/{productId} {
+      // Anyone can read active products; admins can read all
+      allow read: if resource.data.isActive == true || isAdmin();
+
+      // Only admins with product permission can write
+      allow create, update: if hasPermission('manageProducts');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // METAL RATES COLLECTION
+    // ============================================
+    match /metalRates/{rateId} {
+      // Anyone can read current metal rates (needed for price display)
+      allow read: if true;
+
+      // Only admins with rates permission can update
+      allow create, update: if hasPermission('manageRates');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // MAKING CHARGES COLLECTION
+    // ============================================
+    match /makingCharges/{chargeId} {
+      // Anyone can read (needed for price calculation)
+      allow read: if true;
+
+      // Only admins with rates permission can update
+      allow create, update: if hasPermission('manageRates');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // TAX SETTINGS COLLECTION
+    // ============================================
+    match /taxSettings/{taxId} {
+      // Anyone can read (needed for price display)
+      allow read: if true;
+
+      // Only super admins can modify tax settings
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // COUPONS COLLECTION
+    // ============================================
+    match /coupons/{couponId} {
+      // Authenticated users can read active coupons; admins can read all
+      allow read: if (isAuthenticated() && resource.data.isActive == true) || isAdmin();
+
+      // Only admins with promotions permission can manage coupons
+      allow create, update: if hasPermission('managePromotions');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // ORDERS COLLECTION
+    // ============================================
+    match /orders/{orderId} {
+      // Users can read their own orders; admins can read all
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+                     hasPermission('manageOrders');
+
+      // Authenticated users can create orders (their own only)
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid;
+
+      // Users can cancel their own pending orders; admins can update any order
+      allow update: if (isAuthenticated() &&
+                        resource.data.userId == request.auth.uid &&
+                        resource.data.orderStatus == 'pending' &&
+                        request.resource.data.orderStatus == 'cancelled') ||
+                       hasPermission('manageOrders');
+
+      // Only super admins can delete orders
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // STORES COLLECTION
+    // ============================================
+    match /stores/{storeId} {
+      // Anyone can read active stores
+      allow read: if resource.data.isActive == true || isAdmin();
+
+      // Only super admins can manage stores
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // BANNERS COLLECTION
+    // ============================================
+    match /banners/{bannerId} {
+      // Anyone can read active banners
+      allow read: if resource.data.isActive == true || isAdmin();
+
+      // Only admins with promotions permission can manage banners
+      allow create, update: if hasPermission('managePromotions');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // COLLECTIONS (Featured Collections)
+    // ============================================
+    match /collections/{collectionId} {
+      // Anyone can read active collections
+      allow read: if resource.data.isActive == true || isAdmin();
+
+      // Only admins with promotions permission can manage collections
+      allow create, update: if hasPermission('managePromotions');
+      allow delete: if isSuperAdmin();
+    }
+
+    // ============================================
+    // NOTIFICATIONS COLLECTION
+    // ============================================
+    match /notifications/{notificationId} {
+      // Authenticated users can read notifications targeted to them or to all
+      allow read: if isAuthenticated() || isAdmin();
+
+      // Only admins can create/manage notifications
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ============================================
+    // REVIEWS COLLECTION
+    // ============================================
+    match /reviews/{reviewId} {
+      // Anyone can read reviews
+      allow read: if true;
+
+      // Authenticated users can create reviews
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid;
+
+      // Users can update their own reviews; admins can update any
+      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+                       isAdmin();
+
+      // Only admins can delete reviews
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // PRICE HISTORY COLLECTION
+    // ============================================
+    match /priceHistory/{historyId} {
+      // Only admins can read price history
+      allow read: if isAdmin();
+
+      // Only written by Cloud Functions (no client writes)
+      allow create, update, delete: if false;
+    }
+  }
+}

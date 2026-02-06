@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import MyStatusBar from '../../components/myStatusBar';
 import { useNavigation } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import FirebaseRecaptcha from '../../components/FirebaseRecaptcha';
 import { PhoneAuthProvider } from 'firebase/auth';
 import { auth, firebaseConfig } from '../../lib/firebase';
 
@@ -83,10 +83,9 @@ const LoginScreen = () => {
                 contentContainerStyle={{ paddingBottom: Sizes.fixPadding * 2.0 }}
             >
                 {heroSection()}
-                <FirebaseRecaptchaVerifierModal
+                <FirebaseRecaptcha
                     ref={recaptchaVerifier}
                     firebaseConfig={firebaseConfig}
-                    attemptInvisibleVerification={true}
                 />
                 {cardSection()}
             </ScrollView>

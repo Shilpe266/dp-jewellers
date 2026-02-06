@@ -4,7 +4,7 @@ import { Colors, Fonts, Sizes, Screen } from "../../constants/styles";
 import { Feather } from '@expo/vector-icons';
 import MyStatusBar from '../../components/myStatusBar';
 import { useNavigation } from 'expo-router';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import FirebaseRecaptcha from '../../components/FirebaseRecaptcha';
 import { PhoneAuthProvider } from 'firebase/auth';
 import { auth, firebaseConfig } from '../../lib/firebase';
 
@@ -176,10 +176,9 @@ const RegisterScreen = () => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: Sizes.fixPadding * 2.0 }}
             >
-                <FirebaseRecaptchaVerifierModal
+                <FirebaseRecaptcha
                     ref={recaptchaVerifier}
                     firebaseConfig={firebaseConfig}
-                    attemptInvisibleVerification={true}
                 />
                 {heroSection()}
                 {cardSection()}

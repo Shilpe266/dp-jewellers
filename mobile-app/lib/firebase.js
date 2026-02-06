@@ -2,7 +2,6 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, initializeAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
-import firebase from 'firebase/compat/app';
 import Constants from 'expo-constants';
 
 const firebaseConfig = {
@@ -21,14 +20,7 @@ console.log('[Firebase] Config loaded', {
   appId: firebaseConfig.appId,
 });
 
-// Ensure compat app exists for FirebaseRecaptchaVerifierModal.
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-console.log('[Firebase] Compat apps', firebase.apps.map((a) => a.name));
-
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-console.log('[Firebase] Modular app', app?.name);
 
 let auth;
 try {

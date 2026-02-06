@@ -230,8 +230,8 @@ export const CommomStyles = {
         borderBottomWidth: 1.0,
     },
     headerLogo: {
-        width: Screen.width / 6.0,
-        height: Screen.width / 12.0,
+        width: Screen.width / 4.0,
+        height: Screen.width / 8.0,
         resizeMode: 'contain',
         marginRight: Sizes.fixPadding,
     },

@@ -4,6 +4,7 @@ import { View, StyleSheet, BackHandler, Text } from 'react-native'
 import { Colors, Sizes, Fonts } from '../../constants/styles';
 import React, { useState, useCallback, useEffect } from 'react'
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MyStatusBar from '../../components/myStatusBar';
 import { onAuthStateChanged } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
@@ -11,6 +12,7 @@ import { auth, functions } from '../../lib/firebase';
 
 export default function TabLayout() {
 
+  const insets = useSafeAreaInsets();
   const [backClickCount, setbackClickCount] = useState(0);
   const [cartCount, setCartCount] = useState(0);
   const [favoritesCount, setFavoritesCount] = useState(0);
@@ -87,7 +89,7 @@ export default function TabLayout() {
           tabBarActiveTintColor: Colors.primaryColor,
           tabBarInactiveTintColor: Colors.blackColor,
           tabBarShowLabel: false,
-          tabBarStyle: { height: 60.0, backgroundColor: Colors.whiteColor, paddingTop: Sizes.fixPadding },
+          tabBarStyle: { height: 60.0 + insets.bottom, backgroundColor: Colors.whiteColor, paddingTop: Sizes.fixPadding, paddingBottom: insets.bottom },
           tabBarHideOnKeyboard: true,
         }}
       >

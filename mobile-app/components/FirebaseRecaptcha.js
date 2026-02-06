@@ -4,17 +4,20 @@ import { WebView } from 'react-native-webview';
 
 const FirebaseRecaptcha = forwardRef(({ firebaseConfig, onVerify, onError }, ref) => {
   const [visible, setVisible] = useState(false);
-  const [resolveToken, setResolveToken] = useState(null);
-  const [rejectToken, setRejectToken] = useState(null);
+  const phoneRef = useRef('');
+  const resolveRef = useRef(null);
+  const rejectRef = useRef(null);
   const webViewRef = useRef(null);
 
+  // Expose sendOtp(phoneNumber) → Promise<verificationId>
+  // The entire signInWithPhoneNumber flow runs inside the WebView where
+  // a real RecaptchaVerifier works natively with Firebase's reCAPTCHA.
   useImperativeHandle(ref, () => ({
-    // Implements ApplicationVerifier interface for Firebase
-    type: 'recaptcha',
-    verify: () => {
+    sendOtp: (phoneNumber) => {
       return new Promise((resolve, reject) => {
-        setResolveToken(() => resolve);
-        setRejectToken(() => reject);
+        phoneRef.current = phoneNumber;
+        resolveRef.current = resolve;
+        rejectRef.current = reject;
         setVisible(true);
       });
     },
@@ -23,70 +26,99 @@ const FirebaseRecaptcha = forwardRef(({ firebaseConfig, onVerify, onError }, ref
   const handleMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'verify' && data.token) {
+      if (data.type === 'success' && data.verificationId) {
         setVisible(false);
-        if (resolveToken) resolveToken(data.token);
-        if (onVerify) onVerify(data.token);
+        if (resolveRef.current) resolveRef.current(data.verificationId);
+        if (onVerify) onVerify(data.verificationId);
       } else if (data.type === 'error') {
         setVisible(false);
-        const error = new Error(data.message || 'reCAPTCHA verification failed');
-        if (rejectToken) rejectToken(error);
+        const error = new Error(data.message || 'Failed to send OTP');
+        if (rejectRef.current) rejectRef.current(error);
         if (onError) onError(error);
       }
     } catch (e) {
-      // Ignore non-JSON messages
+      // Ignore non-JSON messages from WebView
     }
   };
+
+  const configJson = JSON.stringify(firebaseConfig || {});
+  const phoneJson = JSON.stringify(phoneRef.current || '');
 
   const html = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://www.google.com/recaptcha/api.js?render=explicit"></script>
   <style>
     body {
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
-      height: 100vh;
+      min-height: 100vh;
       margin: 0;
-      background: rgba(0,0,0,0.3);
+      background: transparent;
+      font-family: -apple-system, sans-serif;
     }
-    #recaptcha-container {
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
+    #recaptcha-container { min-height: 80px; }
+    #status {
+      color: #666;
+      margin-top: 16px;
+      text-align: center;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
   <div id="recaptcha-container"></div>
+  <div id="status">Initializing...</div>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"><\/script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"><\/script>
   <script>
-    function onRecaptchaLoad() {
-      grecaptcha.render('recaptcha-container', {
-        sitekey: '${firebaseConfig?.apiKey ? '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI' : '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI'}',
-        callback: function(token) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'verify', token: token }));
-        },
-        'error-callback': function() {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: 'reCAPTCHA error' }));
-        },
-        'expired-callback': function() {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: 'reCAPTCHA expired' }));
-        }
-      });
-    }
+    (function() {
+      var statusEl = document.getElementById('status');
+      try {
+        var config = ${configJson};
+        var phone = ${phoneJson};
 
-    if (typeof grecaptcha !== 'undefined' && grecaptcha.render) {
-      onRecaptchaLoad();
-    } else {
-      window.onload = onRecaptchaLoad;
-    }
-  </script>
+        firebase.initializeApp(config);
+
+        statusEl.textContent = 'Loading verification...';
+
+        var verifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+          size: 'invisible',
+          callback: function() {
+            statusEl.textContent = 'Sending OTP...';
+          }
+        });
+
+        firebase.auth().signInWithPhoneNumber(phone, verifier)
+          .then(function(confirmationResult) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'success',
+              verificationId: confirmationResult.verificationId
+            }));
+          })
+          .catch(function(err) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'error',
+              message: err.message || 'Failed to send OTP'
+            }));
+          });
+      } catch (e) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'error',
+          message: e.message || 'Initialization error'
+        }));
+      }
+    })();
+  <\/script>
 </body>
-</html>
-`;
+</html>`;
+
+  const baseUrl = firebaseConfig?.authDomain
+    ? `https://${firebaseConfig.authDomain}`
+    : undefined;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
@@ -94,7 +126,7 @@ const FirebaseRecaptcha = forwardRef(({ firebaseConfig, onVerify, onError }, ref
         <View style={styles.webviewContainer}>
           <WebView
             ref={webViewRef}
-            source={{ html }}
+            source={{ html, baseUrl }}
             onMessage={handleMessage}
             javaScriptEnabled
             domStorageEnabled
@@ -116,8 +148,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   webviewContainer: {
-    width: 320,
-    height: 200,
+    width: 350,
+    height: 500,
     backgroundColor: 'white',
     borderRadius: 12,
     overflow: 'hidden',

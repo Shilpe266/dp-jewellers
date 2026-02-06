@@ -1,10 +1,11 @@
-import { SafeAreaView, StatusBar } from "react-native";
+import { StatusBar } from "react-native";
 import React from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors } from "../constants/styles";
 
 const MyStatusBar = () => {
   return (
-    <SafeAreaView style={{ backgroundColor: Colors.whiteColor }}>
+    <SafeAreaView edges={['top']} style={{ backgroundColor: Colors.whiteColor }}>
       <StatusBar
         translucent={false}
         backgroundColor={Colors.whiteColor}

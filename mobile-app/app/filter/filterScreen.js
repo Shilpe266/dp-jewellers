@@ -5,6 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import RangeSlider from 'rn-range-slider';
 import MyStatusBar from '../../components/myStatusBar';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Filter options
 const metalTypes = [
@@ -35,6 +36,7 @@ const FilterScreen = () => {
     const navigation = useNavigation();
     const router = useRouter();
     const params = useLocalSearchParams();
+    const insets = useSafeAreaInsets();
 
     // Filter states
     const [selectedMetal, setSelectedMetal] = useState('');
@@ -104,7 +106,7 @@ const FilterScreen = () => {
             <MyStatusBar />
             <View style={{ flex: 1 }}>
                 {header()}
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
                     {metalTypeFilter()}
                     {selectedMetal === 'gold' && goldPurityFilter()}
                     {selectedMetal === 'gold' && goldColorFilter()}
@@ -118,7 +120,7 @@ const FilterScreen = () => {
 
     function bottomButtons() {
         return (
-            <View style={styles.bottomButtonsContainer}>
+            <View style={[styles.bottomButtonsContainer, { paddingBottom: Sizes.fixPadding + insets.bottom }]}>
                 {hasFilters && (
                     <TouchableOpacity
                         activeOpacity={0.8}

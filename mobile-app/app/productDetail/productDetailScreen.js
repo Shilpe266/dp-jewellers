@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Colors, Fonts, Sizes, Screen, CommomStyles } from '../../constants/styles'
 import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { Snackbar } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MyStatusBar from '../../components/myStatusBar';
 import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from 'expo-router';
 import { httpsCallable } from 'firebase/functions';
@@ -14,6 +15,7 @@ const ProductDetailScreen = () => {
 
     const navigation = useNavigation();
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { productId } = useLocalSearchParams();
 
     const [selectedSize, setselectedSize] = useState('');
@@ -122,7 +124,7 @@ const ProductDetailScreen = () => {
                 ) : (
                     <>
                         {header()}
-                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
                             {productImage()}
                             {productNameAndPriceInfo()}
                             {goldOptionsInfo()}
@@ -155,7 +157,7 @@ const ProductDetailScreen = () => {
 
     function addToCartButton() {
         return (
-            <View style={styles.bottomButtonContainer}>
+            <View style={[styles.bottomButtonContainer, { paddingBottom: Sizes.fixPadding + insets.bottom }]}>
                 <TouchableOpacity
                     activeOpacity={0.5}
                     onPress={handleAddToCart}

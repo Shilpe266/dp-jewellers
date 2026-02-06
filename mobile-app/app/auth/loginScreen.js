@@ -3,15 +3,15 @@ import React, { useState, useCallback, useRef } from 'react'
 import { Colors, Fonts, Sizes, Screen } from "../../constants/styles";
 import { useFocusEffect } from '@react-navigation/native';
 import MyStatusBar from '../../components/myStatusBar';
-import { useNavigation } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { useNavigation, useRouter } from 'expo-router';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 import FirebaseRecaptcha from '../../components/FirebaseRecaptcha';
-import { PhoneAuthProvider } from 'firebase/auth';
-import { auth, firebaseConfig } from '../../lib/firebase';
+import { firebaseConfig } from '../../lib/firebase';
 
 const LoginScreen = () => {
 
     const navigation = useNavigation();
+    const router = useRouter();
 
     const backAction = () => {
         backClickCount == 1 ? BackHandler.exitApp() : _spring();
@@ -57,11 +57,7 @@ const LoginScreen = () => {
         setloading(true);
         seterrorText('');
         try {
-            const provider = new PhoneAuthProvider(auth);
-            const verificationId = await provider.verifyPhoneNumber(
-                normalized,
-                recaptchaVerifier.current
-            );
+            const verificationId = await recaptchaVerifier.current.sendOtp(normalized);
             navigation.push('auth/verificationScreen', {
                 verificationId,
                 phoneNumber: normalized,
@@ -77,6 +73,7 @@ const LoginScreen = () => {
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <MyStatusBar />
+            {floatingBackButton()}
             <ScrollView
                 automaticallyAdjustKeyboardInsets={true}
                 showsVerticalScrollIndicator={false}
@@ -100,6 +97,18 @@ const LoginScreen = () => {
                     Press Back Once Again to Exit
                 </Text>
             </View>
+        )
+    }
+
+    function floatingBackButton() {
+        return (
+            <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => router.replace('/(tabs)/home/homeScreen')}
+                style={styles.floatingBackButton}
+            >
+                <MaterialIcons name="keyboard-backspace" size={24} color={Colors.whiteColor} />
+            </TouchableOpacity>
         )
     }
 
@@ -284,6 +293,18 @@ const styles = StyleSheet.create({
     outlineButtonText: {
         ...Fonts.blackColor16Medium,
         letterSpacing: 1.0,
+    },
+    floatingBackButton: {
+        position: 'absolute',
+        top: Sizes.fixPadding * 5,
+        left: Sizes.fixPadding * 1.5,
+        zIndex: 10,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     exitWrapStyle: {
         backgroundColor: Colors.blackColor,

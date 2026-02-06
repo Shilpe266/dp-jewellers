@@ -5,8 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import MyStatusBar from '../../components/myStatusBar';
 import { useNavigation } from 'expo-router';
 import FirebaseRecaptcha from '../../components/FirebaseRecaptcha';
-import { PhoneAuthProvider } from 'firebase/auth';
-import { auth, firebaseConfig } from '../../lib/firebase';
+import { firebaseConfig } from '../../lib/firebase';
 
 const RegisterScreen = () => {
 
@@ -39,11 +38,7 @@ const RegisterScreen = () => {
         setloading(true);
         seterrorText('');
         try {
-            const provider = new PhoneAuthProvider(auth);
-            const verificationId = await provider.verifyPhoneNumber(
-                normalized,
-                recaptchaVerifier.current
-            );
+            const verificationId = await recaptchaVerifier.current.sendOtp(normalized);
             navigation.push('auth/verificationScreen', {
                 verificationId,
                 phoneNumber: normalized,

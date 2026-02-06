@@ -68,9 +68,10 @@ const SelectPaymentMethodScreen = () => {
         return (
             <View style={CommomStyles.headerStyle}>
                 <MaterialIcons name="keyboard-backspace" size={26} color={Colors.blackColor} onPress={() => { navigation.pop() }} />
-                <Text numberOfLines={1} style={{ ...Fonts.blackColor20SemiBold, marginLeft: Sizes.fixPadding * 2.0, }}>
-                    Select Payment Method
-                </Text>
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Image source={require('../../assets/images/dp-logo-02.png')} style={CommomStyles.headerLogo} />
+                </View>
+                <View style={{ width: 26 }} />
             </View>
         )
     }

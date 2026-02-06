@@ -1,10 +1,13 @@
 import { StyleSheet, Text, View, BackHandler, Image, TextInput, ScrollView, TouchableOpacity } from 'react-native'
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { Colors, Fonts, Sizes, Screen } from "../../constants/styles";
 import { useFocusEffect } from '@react-navigation/native';
 import MyStatusBar from '../../components/myStatusBar';
 import { useNavigation } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { PhoneAuthProvider } from 'firebase/auth';
+import { auth, firebaseConfig } from '../../lib/firebase';
 
 const LoginScreen = () => {
 
@@ -32,8 +35,44 @@ const LoginScreen = () => {
     }
 
     const [backClickCount, setbackClickCount] = useState(0);
-    const [fullNameOrEmail, setfullNameOrEmail] = useState('');
-    const [password, setpassword] = useState('');
+    const [phoneNumber, setphoneNumber] = useState('+91');
+    const [loading, setloading] = useState(false);
+    const [errorText, seterrorText] = useState('');
+    const recaptchaVerifier = useRef(null);
+
+    const normalizePhone = (value) => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('+')) return trimmed;
+        if (trimmed.startsWith('0')) return `+91${trimmed.slice(1)}`;
+        return `+91${trimmed}`;
+    };
+
+    const sendOtp = async () => {
+        const normalized = normalizePhone(phoneNumber);
+        if (!normalized || normalized.length < 10) {
+            seterrorText('Please enter a valid phone number.');
+            return;
+        }
+        setloading(true);
+        seterrorText('');
+        try {
+            const provider = new PhoneAuthProvider(auth);
+            const verificationId = await provider.verifyPhoneNumber(
+                normalized,
+                recaptchaVerifier.current
+            );
+            navigation.push('auth/verificationScreen', {
+                verificationId,
+                phoneNumber: normalized,
+                mode: 'login',
+            });
+        } catch (err) {
+            seterrorText('Failed to send OTP. Please try again.');
+        } finally {
+            setloading(false);
+        }
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
@@ -44,6 +83,11 @@ const LoginScreen = () => {
                 contentContainerStyle={{ paddingBottom: Sizes.fixPadding * 2.0 }}
             >
                 {heroSection()}
+                <FirebaseRecaptchaVerifierModal
+                    ref={recaptchaVerifier}
+                    firebaseConfig={firebaseConfig}
+                    attemptInvisibleVerification={true}
+                />
                 {cardSection()}
             </ScrollView>
             {backClickCount == 1 ? exitInfo() : null}
@@ -64,16 +108,10 @@ const LoginScreen = () => {
         return (
             <View style={styles.heroWrap}>
                 <Image
-                    source={require('../../assets/images/jewellery/jewellary1.png')}
+                    source={require('../../assets/images/login-banner.jpg')}
                     style={styles.heroImage}
                 />
-                <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => { navigation.pop() }}
-                    style={styles.backButton}
-                >
-                    <Feather name="arrow-left" size={20} color={Colors.blackColor} />
-                </TouchableOpacity>
+               
             </View>
         )
     }
@@ -82,10 +120,9 @@ const LoginScreen = () => {
         return (
             <View style={styles.card}>
                 <Text style={styles.titleText}>Welcome Back!</Text>
-                <Text style={styles.subtitleText}>Enter your email and password</Text>
-                {userNameOrEmailInfo()}
-                {passwordInfo()}
-                {forgetPasswordText()}
+                <Text style={styles.subtitleText}>Enter your phone number to continue</Text>
+                {phoneNumberInfo()}
+                {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
                 {loginButton()}
                 {orDivider()}
                 {signUpButton()}
@@ -107,10 +144,11 @@ const LoginScreen = () => {
         return (
             <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={() => { navigation.push('(tabs)') }}
+                onPress={sendOtp}
                 style={styles.primaryButton}
+                disabled={loading}
             >
-                <Text style={styles.primaryButtonText}>Log In</Text>
+                <Text style={styles.primaryButtonText}>{loading ? 'Sending OTP...' : 'Send OTP'}</Text>
             </TouchableOpacity>
         )
     }
@@ -127,50 +165,21 @@ const LoginScreen = () => {
         )
     }
 
-    function forgetPasswordText() {
-        return (
-            <Text style={styles.forgetPasswordTextStyle}>
-                Forgot Password?
-            </Text>
-        )
-    }
-
-    function passwordInfo() {
-        return (
-            <View style={{ marginTop: Sizes.fixPadding * 2.2 }}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputRow}>
-                    <Feather name="lock" size={18} color={Colors.grayColor} />
-                    <TextInput
-                        placeholder='Enter password'
-                        placeholderTextColor={Colors.grayColor}
-                        value={password}
-                        onChangeText={(newVal) => setpassword(newVal)}
-                        cursorColor={Colors.primaryColor}
-                        selectionColor={Colors.primaryColor}
-                        style={styles.textFieldStyle}
-                        secureTextEntry={true}
-                        numberOfLines={1}
-                    />
-                </View>
-            </View>
-        )
-    }
-
-    function userNameOrEmailInfo() {
+    function phoneNumberInfo() {
         return (
             <View style={{ marginTop: Sizes.fixPadding * 2.0 }}>
-                <Text style={styles.inputLabel}>Email</Text>
+                <Text style={styles.inputLabel}>Phone</Text>
                 <View style={styles.inputRow}>
-                    <Feather name="mail" size={18} color={Colors.grayColor} />
+                    <Feather name="phone" size={18} color={Colors.grayColor} />
                     <TextInput
-                        placeholder='Enter email'
+                        placeholder='Enter phone number'
                         placeholderTextColor={Colors.grayColor}
-                        value={fullNameOrEmail}
-                        onChangeText={(newVal) => setfullNameOrEmail(newVal)}
+                        value={phoneNumber}
+                        onChangeText={(newVal) => setphoneNumber(newVal)}
                         cursorColor={Colors.primaryColor}
                         selectionColor={Colors.primaryColor}
                         style={styles.textFieldStyle}
+                        keyboardType="phone-pad"
                         numberOfLines={1}
                     />
                 </View>
@@ -191,22 +200,6 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
         resizeMode: 'cover',
-    },
-    backButton: {
-        position: 'absolute',
-        top: Sizes.fixPadding * 2.0,
-        left: Sizes.fixPadding * 2.0,
-        width: 34.0,
-        height: 34.0,
-        borderRadius: 17.0,
-        backgroundColor: Colors.whiteColor,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: Colors.blackColor,
-        shadowOpacity: 0.08,
-        shadowOffset: { width: 0, height: 4 },
-        shadowRadius: 10,
-        elevation: 3,
     },
     card: {
         marginTop: -Sizes.fixPadding * 3.5,
@@ -248,10 +241,11 @@ const styles = StyleSheet.create({
         marginLeft: Sizes.fixPadding,
         paddingVertical: 0,
     },
-    forgetPasswordTextStyle: {
-        marginTop: Sizes.fixPadding - 6.0,
-        textAlign: 'right',
-        ...Fonts.blackColor15Regular,
+    errorText: {
+        marginTop: Sizes.fixPadding,
+        textAlign: 'center',
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
     },
     primaryButton: {
         marginTop: Sizes.fixPadding * 2.2,

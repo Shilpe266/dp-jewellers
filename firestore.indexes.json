@@ -31,6 +31,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "purchaseCount", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "bestseller", "order": "ASCENDING" },
         { "fieldPath": "purchaseCount", "order": "DESCENDING" }
       ]
@@ -49,6 +58,14 @@
       "fields": [
         { "fieldPath": "orderStatus", "order": "ASCENDING" },
         { "fieldPath": "orderedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "stores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
       ]
     }
   ],

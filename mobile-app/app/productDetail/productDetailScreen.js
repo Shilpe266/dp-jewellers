@@ -1,63 +1,139 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, Platform } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, Platform, ActivityIndicator, ScrollView } from 'react-native'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Colors, Fonts, Sizes, Screen, CommomStyles } from '../../constants/styles'
-import CollapsibleToolbar from 'react-native-collapsible-toolbar';
-import { MaterialIcons, Feather } from '@expo/vector-icons';
-import { FlatListSlider } from 'react-native-flatlist-slider';
+import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { Snackbar } from 'react-native-paper';
 import MyStatusBar from '../../components/myStatusBar';
-import { useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter, useFocusEffect } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { auth, functions } from '../../lib/firebase';
 
-const productColors = [
-    {
-        id: '1',
-        color: '#F7D000',
-    },
-    {
-        id: '2',
-        color: '#DCDCDE',
-    },
-];
-const productSizes = ['46', '48', '50', '52', '56', '58', '60',];
-
-const productDescriptions = [
-    'Lorem ipsum dolor sit amet, consectetur adipiscingelit. Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-    'Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-    'Lorem ipsum dolor sit amet, consectetur adipiscingelit. Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-    'Volutpat eu tortor quis nunc lectus faucibus sit vitae auctor faucibus. Consectetur nec amet varius dui dui non et ante.',
-];
+const fallbackImage = require('../../assets/images/jewellery/jewellary15.png');
 
 const ProductDetailScreen = () => {
 
     const navigation = useNavigation();
+    const router = useRouter();
+    const { productId } = useLocalSearchParams();
 
-    const [selectedColorId, setselectedColorId] = useState(productColors[1].id);
     const [selectedSize, setselectedSize] = useState('');
+    const [selectedGoldOption, setSelectedGoldOption] = useState('');
     const [isFavorite, setisFavorite] = useState(false);
     const [showSnackBar, setshowSnackBar] = useState(false);
+    const [snackText, setsnackText] = useState('');
+    const [product, setproduct] = useState(null);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+    const [activeIndex, setactiveIndex] = useState(0);
 
-    const images = [
-        { image: require('../../assets/images/jewellery/jewellary15.png') },
-        { image: require('../../assets/images/jewellery/jewellary15.png') },
-        { image: require('../../assets/images/jewellery/jewellary15.png') },
-        { image: require('../../assets/images/jewellery/jewellary15.png') }
-    ];
+    // Collapsible section states
+    const [showProductDetails, setShowProductDetails] = useState(false);
+    const [showDiamondDetails, setShowDiamondDetails] = useState(false);
+    const [showMetalDetails, setShowMetalDetails] = useState(false);
+    const [showPriceBreakup, setShowPriceBreakup] = useState(false);
+
+    const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 60 });
+    const onViewRef = useRef(({ viewableItems }) => {
+        if (viewableItems && viewableItems.length > 0) {
+            setactiveIndex(viewableItems[0].index || 0);
+        }
+    });
+
+    useEffect(() => {
+        let active = true;
+        const fetchProduct = async () => {
+            if (!productId) {
+                seterrorText('Product not found.');
+                setloading(false);
+                return;
+            }
+            setloading(true);
+            seterrorText('');
+            try {
+                const getProduct = httpsCallable(functions, 'getProduct');
+                const res = await getProduct({ productId });
+                if (active) {
+                    setproduct(res.data);
+                    if (res.data?.sizes?.length) {
+                        setselectedSize(res.data.sizes[0]);
+                    }
+                    // Set default gold option
+                    const goldOptions = res.data?.goldOptions || res.data?.metals?.[0]?.goldOptions || [];
+                    if (goldOptions.length > 0) {
+                        setSelectedGoldOption(goldOptions[0]);
+                    }
+                }
+            } catch (err) {
+                if (active) {
+                    seterrorText('Failed to load product.');
+                }
+            } finally {
+                if (active) setloading(false);
+            }
+        };
+        fetchProduct();
+        return () => { active = false; };
+    }, [productId]);
+
+    // Check favorites status on screen focus - this ensures heart icon persists on refresh
+    useFocusEffect(
+        useCallback(() => {
+            const checkFavoriteStatus = async () => {
+                if (!productId || !auth?.currentUser) {
+                    setisFavorite(false);
+                    return;
+                }
+                try {
+                    const getFavorites = httpsCallable(functions, 'getFavorites');
+                    const favRes = await getFavorites();
+                    const favList = favRes?.data?.favorites || [];
+                    // Ensure proper string comparison for productId
+                    const isFav = favList.some(f => String(f.productId) === String(productId));
+                    setisFavorite(isFav);
+                } catch (e) {
+                    // Ignore favorites fetch error
+                }
+            };
+            checkFavoriteStatus();
+        }, [productId])
+    );
+
+    const formatGoldOption = (option) => {
+        const map = {
+            'yellow_gold': 'Yellow Gold',
+            'white_gold': 'White Gold',
+            'rose_gold': 'Rose Gold',
+        };
+        return map[option] || option;
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <MyStatusBar />
             <View style={{ flex: 1 }}>
-                <CollapsibleToolbar
-                    renderContent={pageContent}
-                    renderNavBar={header}
-                    renderToolBar={productImage}
-                    collapsedNavBarBackgroundColor={Colors.whiteColor}
-                    translucentStatusBar={false}
-                    toolBarHeight={Screen.height / 2.8}
-                    showsVerticalScrollIndicator={false}
-                />
-                {addToCartButton()}
-                {snackBar()}
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : (
+                    <>
+                        {header()}
+                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+                            {productImage()}
+                            {productNameAndPriceInfo()}
+                            {goldOptionsInfo()}
+                            {productSizeInfo()}
+                            {productDescriptionInfo()}
+                            {collapsibleSections()}
+                        </ScrollView>
+                        {addToCartButton()}
+                        {snackBar()}
+                    </>
+                )}
             </View>
         </View>
     )
@@ -71,7 +147,7 @@ const ProductDetailScreen = () => {
                 style={CommomStyles.snackBarStyle}
             >
                 <Text style={{ ...Fonts.whiteColor16Medium }}>
-                    {isFavorite ? 'Added To Favorite' : 'Removed From Favorite'}
+                    {snackText}
                 </Text>
             </Snackbar>
         )
@@ -79,83 +155,369 @@ const ProductDetailScreen = () => {
 
     function addToCartButton() {
         return (
-            <TouchableOpacity
-                activeOpacity={0.5}
-                onPress={() => { navigation.navigate('(tabs)', { screen: 'cart/cartScreen' }) }}
-                style={CommomStyles.buttonStyle}
-            >
-                <Text style={{ ...Fonts.whiteColor19Medium }}>
-                    Add to Cart
-                </Text>
-            </TouchableOpacity>
-        )
-    }
-
-    function productImage() {
-        const ImageView = ({ item }) => {
-            return (
-                <View style={{ width: Screen.width }}>
-                    <Image
-                        source={item.image}
-                        style={styles.productImageStyle}
-                    />
-                </View>
-            );
-        };
-        return (
-            <View style={{ height: Screen.height / 2.8 }}>
-                <FlatListSlider
-                    data={images}
-                    height={Screen.height / 3.8}
-                    indicatorContainerStyle={{ position: 'absolute', bottom: -40 }}
-                    indicatorActiveColor={Colors.lightGrayColor}
-                    indicatorInActiveColor={'#F0F0F0'}
-                    indicatorStyle={{ ...styles.dotStyle }}
-                    indicatorActiveWidth={10}
-                    animation
-                    onPress={item => { }}
-                    autoscroll={true}
-                    timer={4000}
-                    local={true}
-                    component={<ImageView />}
-                />
+            <View style={styles.bottomButtonContainer}>
+                <TouchableOpacity
+                    activeOpacity={0.5}
+                    onPress={handleAddToCart}
+                    style={styles.addToCartButton}
+                >
+                    <Feather name="shopping-bag" size={20} color={Colors.whiteColor} style={{ marginRight: 8 }} />
+                    <Text style={{ ...Fonts.whiteColor19Medium }}>
+                        Add to Cart
+                    </Text>
+                </TouchableOpacity>
             </View>
         )
     }
 
-    function pageContent() {
+    function productImage() {
+        const imageList = (product?.images || []).map((img) => ({
+            image: img?.url || img,
+        }));
+        const finalImages = imageList.length ? imageList : [{ image: fallbackImage }];
+        const isRemote = imageList.length > 0;
         return (
-            <View style={{ flex: 1, }}>
-                {divider()}
-                {productNameAndPriceInfo()}
-                {productColorInfo()}
-                {productSizeInfo()}
-                {productDescriptionInfo()}
+            <View style={{ height: Screen.height / 2.8 }}>
+                <FlatList
+                    data={finalImages}
+                    keyExtractor={(_, index) => `${index}`}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    onViewableItemsChanged={onViewRef.current}
+                    viewabilityConfig={viewConfigRef.current}
+                    renderItem={({ item }) => (
+                        <View style={{ width: Screen.width }}>
+                            <Image
+                                source={isRemote ? { uri: item.image } : item.image}
+                                style={styles.productImageStyle}
+                            />
+                        </View>
+                    )}
+                />
+                <View style={styles.dotsWrap}>
+                    {finalImages.map((_, idx) => (
+                        <View
+                            key={`${idx}`}
+                            style={[
+                                styles.dotStyle,
+                                idx === activeIndex ? styles.dotActive : styles.dotInactive,
+                            ]}
+                        />
+                    ))}
+                </View>
+            </View>
+        )
+    }
+
+    function collapsibleSections() {
+        return (
+            <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
+                {productDetailsSection()}
+                {product?.diamond?.hasDiamond && diamondDetailsSection()}
+                {metalDetailsSection()}
+                {priceBreakupSection()}
+            </View>
+        )
+    }
+
+    function productDetailsSection() {
+        const metal = product?.metal || product?.metals?.[0] || {};
+        return (
+            <View style={styles.collapsibleSection}>
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setShowProductDetails(!showProductDetails)}
+                    style={styles.collapsibleHeader}
+                >
+                    <Text style={styles.collapsibleTitle}>PRODUCT DETAILS</Text>
+                    <Ionicons
+                        name={showProductDetails ? "remove" : "add"}
+                        size={20}
+                        color={Colors.primaryColor}
+                    />
+                </TouchableOpacity>
+                {showProductDetails && (
+                    <View style={styles.collapsibleContent}>
+                        <DetailRow label="Product Code" value={product?.productCode || '-'} />
+                        {product?.dimensions?.height && (
+                            <DetailRow label="Height" value={`${product.dimensions.height} mm`} />
+                        )}
+                        {product?.dimensions?.width && (
+                            <DetailRow label="Width" value={`${product.dimensions.width} mm`} />
+                        )}
+                        {product?.dimensions?.length && (
+                            <DetailRow label="Length" value={`${product.dimensions.length} inches`} />
+                        )}
+                        <DetailRow
+                            label="Product Weight"
+                            value={metal?.grossWeight ? `${metal.grossWeight} gram` : (metal?.netWeight ? `${metal.netWeight} gram` : '-')}
+                        />
+                        {product?.certifications?.certificateNumber && (
+                            <DetailRow label="HUID Number" value={product.certifications.certificateNumber} />
+                        )}
+                    </View>
+                )}
+            </View>
+        )
+    }
+
+    function diamondDetailsSection() {
+        const diamond = product?.diamond || {};
+        const variants = diamond?.variants || [];
+        const totalCount = diamond?.totalCount || variants.reduce((sum, v) => sum + (v.count || 0), 0);
+        const totalWeight = diamond?.totalCaratWeight || variants.reduce((sum, v) => sum + (v.caratWeight || 0), 0);
+
+        return (
+            <View style={styles.collapsibleSection}>
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setShowDiamondDetails(!showDiamondDetails)}
+                    style={styles.collapsibleHeader}
+                >
+                    <Text style={styles.collapsibleTitle}>DIAMOND DETAILS</Text>
+                    <Ionicons
+                        name={showDiamondDetails ? "remove" : "add"}
+                        size={20}
+                        color={Colors.primaryColor}
+                    />
+                </TouchableOpacity>
+                {showDiamondDetails && (
+                    <View style={styles.collapsibleContent}>
+                        <DetailRow label="Total Weight" value={`${totalWeight} Ct`} highlight />
+                        <DetailRow label="Total No. Of Diamonds" value={`${totalCount}`} />
+
+                        {variants.length > 0 && (
+                            <View style={styles.diamondVariantsTable}>
+                                <View style={styles.tableHeader}>
+                                    <Text style={[styles.tableHeaderText, { flex: 0.8 }]}>Count</Text>
+                                    <Text style={[styles.tableHeaderText, { flex: 1 }]}>Shape</Text>
+                                    <Text style={[styles.tableHeaderText, { flex: 1 }]}>Weight</Text>
+                                    <Text style={[styles.tableHeaderText, { flex: 1 }]}>Setting</Text>
+                                </View>
+                                {variants.map((v, idx) => (
+                                    <View key={idx} style={styles.tableRow}>
+                                        <Text style={[styles.tableCell, { flex: 0.8 }]}>{v.count || '-'}</Text>
+                                        <Text style={[styles.tableCell, { flex: 1 }]}>{v.shape || '-'}</Text>
+                                        <Text style={[styles.tableCell, { flex: 1 }]}>{v.caratWeight ? `${v.caratWeight} ct` : '-'}</Text>
+                                        <Text style={[styles.tableCell, { flex: 1 }]}>{v.settingType || '-'}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+
+                        {diamond?.certification && (
+                            <DetailRow label="Certification" value={diamond.certification} />
+                        )}
+                    </View>
+                )}
+            </View>
+        )
+    }
+
+    function metalDetailsSection() {
+        const metals = product?.metals || [];
+        const metal = product?.metal || metals[0] || {};
+        const goldOptions = product?.goldOptions || metal?.goldOptions || [];
+
+        const formatMetalType = (type, purity) => {
+            if (!type) return '-';
+            let formatted = type.charAt(0).toUpperCase() + type.slice(1);
+            if (purity) {
+                formatted = `${purity} ${formatted}`;
+            }
+            if (goldOptions.length > 0 && selectedGoldOption) {
+                formatted += ` (${formatGoldOption(selectedGoldOption)})`;
+            }
+            return formatted;
+        };
+
+        return (
+            <View style={styles.collapsibleSection}>
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setShowMetalDetails(!showMetalDetails)}
+                    style={styles.collapsibleHeader}
+                >
+                    <Text style={styles.collapsibleTitle}>METAL DETAILS</Text>
+                    <Ionicons
+                        name={showMetalDetails ? "remove" : "add"}
+                        size={20}
+                        color={Colors.primaryColor}
+                    />
+                </TouchableOpacity>
+                {showMetalDetails && (
+                    <View style={styles.collapsibleContent}>
+                        {metals.length > 1 ? (
+                            metals.map((m, idx) => (
+                                <View key={idx}>
+                                    {idx > 0 && <View style={styles.metalDivider} />}
+                                    <DetailRow
+                                        label="Type"
+                                        value={formatMetalType(m.type, m.purity || m.silverType)}
+                                    />
+                                    <DetailRow
+                                        label="Weight"
+                                        value={m.netWeight ? `${m.netWeight} gram` : '-'}
+                                    />
+                                </View>
+                            ))
+                        ) : (
+                            <>
+                                <DetailRow
+                                    label="Type"
+                                    value={formatMetalType(metal.type, metal.purity || metal.silverType)}
+                                />
+                                <DetailRow
+                                    label="Weight"
+                                    value={metal.netWeight ? `${metal.netWeight} gram` : '-'}
+                                />
+                            </>
+                        )}
+                    </View>
+                )}
+            </View>
+        )
+    }
+
+    function priceBreakupSection() {
+        const pricing = product?.pricing || {};
+        const metalValue = pricing.metalValue || 0;
+        const diamondValue = pricing.diamondValue || 0;
+        const makingChargeAmount = pricing.makingChargeAmount || 0;
+        const wastageChargeAmount = pricing.wastageChargeAmount || 0;
+        const stoneSettingCharges = pricing.stoneSettingCharges || 0;
+        const designCharges = pricing.designCharges || 0;
+        const taxAmount = pricing.taxAmount || 0;
+        const discount = pricing.discount || 0;
+        const finalPrice = pricing.finalPrice || 0;
+
+        return (
+            <View style={styles.collapsibleSection}>
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setShowPriceBreakup(!showPriceBreakup)}
+                    style={styles.collapsibleHeader}
+                >
+                    <Text style={styles.collapsibleTitle}>PRICE BREAKUP</Text>
+                    <Ionicons
+                        name={showPriceBreakup ? "remove" : "add"}
+                        size={20}
+                        color={Colors.primaryColor}
+                    />
+                </TouchableOpacity>
+                {showPriceBreakup && (
+                    <View style={styles.collapsibleContent}>
+                        {metalValue > 0 && (
+                            <PriceRow label="Metal Value" value={metalValue} />
+                        )}
+                        {diamondValue > 0 && (
+                            <PriceRow label="Diamond" value={diamondValue} />
+                        )}
+                        {(makingChargeAmount > 0 || wastageChargeAmount > 0) && (
+                            <PriceRow label="Making Charges" value={makingChargeAmount + wastageChargeAmount} />
+                        )}
+                        {stoneSettingCharges > 0 && (
+                            <PriceRow label="Stone Setting" value={stoneSettingCharges} />
+                        )}
+                        {designCharges > 0 && (
+                            <PriceRow label="Design Charges" value={designCharges} />
+                        )}
+                        {taxAmount > 0 && (
+                            <PriceRow label="GST" value={taxAmount} />
+                        )}
+                        {discount > 0 && (
+                            <PriceRow label="Discount" value={-discount} isDiscount />
+                        )}
+                        <View style={styles.totalPriceRow}>
+                            <Text style={styles.totalLabel}>Total</Text>
+                            <Text style={styles.totalValue}>
+                                {`₹ ${Number(finalPrice).toLocaleString('en-IN')}/-`}
+                            </Text>
+                        </View>
+                    </View>
+                )}
+            </View>
+        )
+    }
+
+    function DetailRow({ label, value, highlight }) {
+        return (
+            <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, highlight && styles.highlightLabel]}>{label}</Text>
+                <Text style={[styles.detailValue, highlight && styles.highlightValue]}>{value}</Text>
+            </View>
+        )
+    }
+
+    function PriceRow({ label, value, isDiscount }) {
+        return (
+            <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>{label}</Text>
+                <Text style={[styles.priceValue, isDiscount && styles.discountValue]}>
+                    {isDiscount ? `- ₹ ${Math.abs(value).toLocaleString('en-IN')}/-` : `₹ ${Number(value).toLocaleString('en-IN')}/-`}
+                </Text>
             </View>
         )
     }
 
     function productDescriptionInfo() {
+        const description = product?.description || '';
+        if (!description) return null;
         return (
-            <View style={{ margin: Sizes.fixPadding * 2.0 }}>
-                <Text style={{ ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding }}>
+            <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
+                <Text style={{ ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding - 5 }}>
                     Description
                 </Text>
-                {
-                    productDescriptions.map((item, index) => (
-                        <Text
-                            key={`${index}`}
-                            style={{ ...Fonts.grayColor15Regular, lineHeight: 23.0, marginBottom: Sizes.fixPadding - 5.0 }}
+                <Text style={{ ...Fonts.grayColor15Regular, lineHeight: 22.0 }}>
+                    {description}
+                </Text>
+            </View>
+        )
+    }
+
+    function goldOptionsInfo() {
+        const goldOptions = product?.goldOptions || product?.metals?.[0]?.goldOptions || [];
+        if (goldOptions.length === 0) return null;
+
+        return (
+            <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
+                <Text style={{ ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding - 5 }}>
+                    Gold Options
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {goldOptions.map((option) => (
+                        <TouchableOpacity
+                            key={option}
+                            activeOpacity={0.8}
+                            onPress={() => setSelectedGoldOption(option)}
+                            style={[
+                                styles.goldOptionChip,
+                                selectedGoldOption === option && styles.goldOptionChipSelected
+                            ]}
                         >
-                            {item}
-                        </Text>
-                    ))
-                }
+                            <View style={[
+                                styles.goldColorIndicator,
+                                option === 'yellow_gold' && { backgroundColor: '#FFD700' },
+                                option === 'white_gold' && { backgroundColor: '#E8E8E8' },
+                                option === 'rose_gold' && { backgroundColor: '#E8A090' },
+                            ]} />
+                            <Text style={[
+                                styles.goldOptionText,
+                                selectedGoldOption === option && styles.goldOptionTextSelected
+                            ]}>
+                                {formatGoldOption(option)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
             </View>
         )
     }
 
     function productSizeInfo() {
+        const sizes = product?.sizes || [];
+        if (!sizes.length) return null;
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.8}
@@ -170,12 +532,12 @@ const ProductDetailScreen = () => {
             </TouchableOpacity >
         )
         return (
-            <View>
-                <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding, }}>
+            <View style={{ marginTop: Sizes.fixPadding }}>
+                <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding - 5 }}>
                     Size
                 </Text>
                 <FlatList
-                    data={productSizes}
+                    data={sizes}
                     keyExtrator={(item, index) => { `${item}${index}` }}
                     renderItem={renderItem}
                     horizontal
@@ -186,63 +548,28 @@ const ProductDetailScreen = () => {
         )
     }
 
-    function productColorInfo() {
-        return (
-            <View style={{ flexDirection: 'row', marginHorizontal: Sizes.fixPadding * 2.0, marginBottom: Sizes.fixPadding * 2.0 }}>
-                <View style={{ flex: 1, flexDirection: 'row' }}>
-                    <Text style={{ ...Fonts.blackColor16Medium }}>
-                        Color
-                    </Text>
-                    <View style={styles.productColorsWrapStyle}>
-                        {
-                            productColors.map((item) => (
-                                <TouchableOpacity
-                                    activeOpacity={0.5}
-                                    onPress={() => { setselectedColorId(item.id) }}
-                                    key={`${item.id}`}
-                                    style={{
-                                        ...styles.productColorCircleStyle,
-                                        backgroundColor: item.color,
-                                        borderWidth: selectedColorId == item.id ? 1.5 : 0.0,
-                                        elevation: selectedColorId == item.id ? 3.0 : 0.0,
-                                        shadowOpacity: selectedColorId == item.id ? 0.2 : 0
-                                    }}>
-                                </TouchableOpacity>
-                            ))
-                        }
-                    </View>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' }}>
-                    <MaterialIcons name="star" size={18} color={Colors.primaryColor} />
-                    <Text style={{ ...Fonts.blackColor16Medium, marginLeft: Sizes.fixPadding - 5.0 }}>
-                        4.2 (350 reviews)
-                    </Text>
-                </View>
-            </View>
-        )
-    }
-
     function productNameAndPriceInfo() {
         return (
-            <View style={{ flexDirection: 'row', margin: Sizes.fixPadding * 2.0, }}>
-                <View style={{ flex: 1, marginRight: Sizes.fixPadding }}>
-                    <Text numberOfLines={1} style={{ ...Fonts.blackColor18Medium }}>
-                        Attract Ring Round Silver Plated
-                    </Text>
-                    <Text style={{ ...Fonts.grayColor13Medium }}>
-                        GIVA RINGS
+            <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, marginRight: Sizes.fixPadding }}>
+                        <Text numberOfLines={2} style={{ ...Fonts.blackColor18Medium }}>
+                            {product?.name || 'Product'}
+                        </Text>
+                        <Text style={{ ...Fonts.grayColor13Medium, marginTop: 2 }}>
+                            {product?.category || ''}{product?.subCategory ? ` • ${product.subCategory}` : ''}
+                        </Text>
+                    </View>
+                    <Text style={{ ...Fonts.primaryColor18Bold }}>
+                        {`₹ ${Number(product?.pricing?.finalPrice || 0).toLocaleString('en-IN')}`}
                     </Text>
                 </View>
-                <Text style={{ ...Fonts.primaryColor18Bold }}>
-                    $120.00
-                </Text>
+                {product?.productCode && (
+                    <Text style={{ ...Fonts.grayColor14Regular, marginTop: 4 }}>
+                        SKU: {product.productCode}
+                    </Text>
+                )}
             </View>
-        )
-    }
-
-    function divider() {
-        return (
-            <View style={{ backgroundColor: Colors.offWhiteColor, height: 1.0, }} />
         )
     }
 
@@ -253,20 +580,68 @@ const ProductDetailScreen = () => {
                     name="keyboard-backspace"
                     size={26}
                     color={Colors.blackColor}
-                    onPress={() => { navigation.pop() }}
+                    onPress={() => { navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/home/homeScreen') }}
                 />
+                <TouchableOpacity onPress={() => router.replace('/(tabs)/home/homeScreen')} activeOpacity={0.7} style={{ flex: 1, alignItems: 'center' }}>
+                    <Image source={require('../../assets/images/dp-logo-02.png')} style={CommomStyles.headerLogo} />
+                </TouchableOpacity>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <MaterialIcons
                         name={isFavorite ? "favorite" : "favorite-border"}
                         size={23}
-                        color={Colors.blackColor}
-                        style={{ marginRight: Sizes.fixPadding * 2.0 }}
-                        onPress={() => { setshowSnackBar(true), setisFavorite(!isFavorite) }}
+                        color={isFavorite ? Colors.redColor : Colors.blackColor}
+                        style={{ marginRight: Sizes.fixPadding + 5 }}
+                        onPress={toggleFavorite}
                     />
-                    <Feather name="share-2" size={20} color={Colors.blackColor} />
+                    <Feather
+                        name="shopping-bag"
+                        size={22}
+                        color={Colors.blackColor}
+                        onPress={() => router.push('/(tabs)/cart/cartScreen')}
+                    />
                 </View>
             </View>
         )
+    }
+
+    async function handleAddToCart() {
+        if (!auth?.currentUser) {
+            navigation.push('auth/loginScreen');
+            return;
+        }
+        try {
+            const updateCart = httpsCallable(functions, 'updateCart');
+            await updateCart({
+                action: 'add',
+                productId,
+                size: selectedSize || null,
+                goldOption: selectedGoldOption || null,
+                quantity: 1,
+            });
+            setsnackText('Added to cart');
+            setshowSnackBar(true);
+        } catch (err) {
+            setsnackText('Failed to add to cart');
+            setshowSnackBar(true);
+        }
+    }
+
+    async function toggleFavorite() {
+        if (!auth?.currentUser) {
+            navigation.push('auth/loginScreen');
+            return;
+        }
+        try {
+            const updateFavorites = httpsCallable(functions, 'updateFavorites');
+            const action = isFavorite ? 'remove' : 'add';
+            await updateFavorites({ action, productId });
+            setisFavorite(!isFavorite);
+            setsnackText(isFavorite ? 'Removed from favourite' : 'Added to favourite');
+            setshowSnackBar(true);
+        } catch (err) {
+            setsnackText('Failed to update favourite');
+            setshowSnackBar(true);
+        }
     }
 }
 
@@ -277,45 +652,211 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginHorizontal: Sizes.fixPadding * 2.0,
-        marginTop: Platform.OS == 'ios' ? 0 : Sizes.fixPadding + 10.0
+        paddingHorizontal: Sizes.fixPadding * 2.0,
+        paddingVertical: Sizes.fixPadding,
+        borderBottomColor: Colors.offWhiteColor,
+        borderBottomWidth: 1.0,
+    },
+    dotsWrap: {
+        position: 'absolute',
+        bottom: Sizes.fixPadding,
+        width: '100%',
+        flexDirection: 'row',
+        justifyContent: 'center',
     },
     dotStyle: {
-        marginHorizontal: Sizes.fixPadding - 5.0,
-        width: 10.0,
-        height: 10.0,
-        borderRadius: 2.0,
+        marginHorizontal: 4,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    dotActive: {
+        backgroundColor: Colors.primaryColor,
+    },
+    dotInactive: {
+        backgroundColor: Colors.lightGrayColor,
     },
     productImageStyle: {
-        width: Screen.width / 1.8,
-        height: Screen.height / 3.8,
+        width: Screen.width / 1.5,
+        height: Screen.height / 3.5,
         resizeMode: 'contain',
         alignSelf: 'center',
-    },
-    productColorCircleStyle: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 24.0,
-        height: 24.0,
-        borderRadius: 12.0,
-        marginHorizontal: Sizes.fixPadding - 3.0,
-        marginTop: Sizes.fixPadding - 5.0,
-        borderColor: Colors.whiteColor,
-        shadowColor: Colors.blackColor,
-        shadowOffset: { width: 0, height: 0 }
-    },
-    productColorsWrapStyle: {
-        flex: 1,
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginLeft: Sizes.fixPadding - 3.0
     },
     productSizeBoxStyle: {
         borderColor: Colors.offWhiteColor,
         borderWidth: 1.0,
-        paddingHorizontal: Sizes.fixPadding - 2.0,
-        paddingVertical: Sizes.fixPadding - 7.0,
+        paddingHorizontal: Sizes.fixPadding,
+        paddingVertical: Sizes.fixPadding - 5.0,
         marginHorizontal: Sizes.fixPadding - 3.0,
         borderRadius: Sizes.fixPadding - 5.0,
+        minWidth: 45,
+        alignItems: 'center',
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
+    },
+    bottomButtonContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: Colors.whiteColor,
+        paddingHorizontal: Sizes.fixPadding * 2.0,
+        paddingVertical: Sizes.fixPadding,
+        borderTopColor: Colors.offWhiteColor,
+        borderTopWidth: 1.0,
+    },
+    addToCartButton: {
+        backgroundColor: Colors.blackColor,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: Sizes.fixPadding,
+        padding: Sizes.fixPadding + 2.0,
+    },
+    // Collapsible Section Styles
+    collapsibleSection: {
+        borderColor: Colors.offWhiteColor,
+        borderWidth: 1.0,
+        borderRadius: Sizes.fixPadding,
+        marginBottom: Sizes.fixPadding,
+        overflow: 'hidden',
+    },
+    collapsibleHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: Sizes.fixPadding + 2,
+        backgroundColor: Colors.offWhiteColor,
+    },
+    collapsibleTitle: {
+        ...Fonts.primaryColor14Bold,
+        letterSpacing: 0.5,
+    },
+    collapsibleContent: {
+        padding: Sizes.fixPadding + 2,
+    },
+    detailRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: Sizes.fixPadding - 4,
+        borderBottomColor: Colors.offWhiteColor,
+        borderBottomWidth: 0.5,
+    },
+    detailLabel: {
+        ...Fonts.grayColor14Regular,
+        flex: 1,
+    },
+    detailValue: {
+        ...Fonts.blackColor15Medium,
+        textAlign: 'right',
+    },
+    highlightLabel: {
+        color: Colors.primaryColor,
+    },
+    highlightValue: {
+        ...Fonts.primaryColor16Bold,
+    },
+    // Diamond Table Styles
+    diamondVariantsTable: {
+        marginTop: Sizes.fixPadding,
+        borderColor: Colors.offWhiteColor,
+        borderWidth: 1,
+        borderRadius: Sizes.fixPadding - 5,
+        overflow: 'hidden',
+    },
+    tableHeader: {
+        flexDirection: 'row',
+        backgroundColor: Colors.offWhiteColor,
+        paddingVertical: Sizes.fixPadding - 4,
+        paddingHorizontal: Sizes.fixPadding - 5,
+    },
+    tableHeaderText: {
+        ...Fonts.grayColor14Medium,
+        fontSize: 12,
+    },
+    tableRow: {
+        flexDirection: 'row',
+        paddingVertical: Sizes.fixPadding - 4,
+        paddingHorizontal: Sizes.fixPadding - 5,
+        borderBottomColor: Colors.offWhiteColor,
+        borderBottomWidth: 0.5,
+    },
+    tableCell: {
+        ...Fonts.blackColor15Regular,
+        fontSize: 13,
+    },
+    metalDivider: {
+        height: 1,
+        backgroundColor: Colors.offWhiteColor,
+        marginVertical: Sizes.fixPadding - 5,
+    },
+    // Price Breakup Styles
+    priceRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: Sizes.fixPadding - 4,
+    },
+    priceLabel: {
+        ...Fonts.blackColor15Regular,
+    },
+    priceValue: {
+        ...Fonts.primaryColor16Bold,
+    },
+    discountValue: {
+        color: Colors.greenColor,
+    },
+    totalPriceRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingTop: Sizes.fixPadding,
+        marginTop: Sizes.fixPadding - 5,
+        borderTopColor: Colors.offWhiteColor,
+        borderTopWidth: 1,
+    },
+    totalLabel: {
+        ...Fonts.blackColor16SemiBold,
+    },
+    totalValue: {
+        ...Fonts.primaryColor18Bold,
+    },
+    // Gold Options Styles
+    goldOptionChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderColor: Colors.offWhiteColor,
+        borderWidth: 1.0,
+        borderRadius: Sizes.fixPadding - 5.0,
+        paddingHorizontal: Sizes.fixPadding,
+        paddingVertical: Sizes.fixPadding - 5.0,
+        marginRight: Sizes.fixPadding,
+        marginBottom: Sizes.fixPadding - 5,
+    },
+    goldOptionChipSelected: {
+        borderColor: Colors.primaryColor,
+        backgroundColor: Colors.primaryColor + '10',
+    },
+    goldColorIndicator: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        marginRight: Sizes.fixPadding - 5,
+        borderWidth: 1,
+        borderColor: Colors.lightGrayColor,
+    },
+    goldOptionText: {
+        ...Fonts.grayColor14Regular,
+    },
+    goldOptionTextSelected: {
+        ...Fonts.primaryColor14Medium,
     },
 })

@@ -3,18 +3,30 @@ import React, { useEffect } from 'react'
 import { Colors, Fonts, Screen } from '../constants/styles'
 import MyStatusBar from '../components/myStatusBar'
 import { useNavigation } from 'expo-router'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth } from '../lib/firebase'
 
 const SplashScreen = () => {
 
     const navigation = useNavigation();
 
     useEffect(() => {
+        let unsubscribe = null;
         const timer = setTimeout(() => {
-            // Skip auth for now to preview the app without backend.
-            navigation.push('(tabs)')
-        }, 2000);
+            unsubscribe = onAuthStateChanged(auth, (user) => {
+                navigation.replace('(tabs)')
+                // if (user) {
+                //     navigation.replace('(tabs)')
+                // } else {
+                //     navigation.replace('auth/loginScreen')
+                // }
+            })
+        }, 800);
         return () => {
             clearTimeout(timer);
+            if (unsubscribe) {
+                unsubscribe();
+            }
         }
     }, [])
 

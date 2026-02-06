@@ -1,32 +1,61 @@
 import { StyleSheet, Text, View, Image, TextInput, ScrollView, TouchableOpacity } from 'react-native'
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Colors, Fonts, Sizes, Screen } from "../../constants/styles";
 import { Feather } from '@expo/vector-icons';
 import MyStatusBar from '../../components/myStatusBar';
 import { useNavigation } from 'expo-router';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { PhoneAuthProvider } from 'firebase/auth';
+import { auth, firebaseConfig } from '../../lib/firebase';
 
 const RegisterScreen = () => {
 
     const navigation = useNavigation();
 
     const [fullName, setfullName] = useState('');
-    const [email, setemail] = useState('');
-    const [mobileNumber, setmobileNumber] = useState('');
-    const [password, setpassword] = useState('');
+    const [mobileNumber, setmobileNumber] = useState('+91');
+    const [loading, setloading] = useState(false);
+    const [errorText, seterrorText] = useState('');
+    const recaptchaVerifier = useRef(null);
 
-    return (
-        <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
-            <MyStatusBar />
-            <ScrollView
-                automaticallyAdjustKeyboardInsets={true}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: Sizes.fixPadding * 2.0 }}
-            >
-                {heroSection()}
-                {cardSection()}
-            </ScrollView>
-        </View>
-    )
+    const normalizePhone = (value) => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('+')) return trimmed;
+        if (trimmed.startsWith('0')) return `+91${trimmed.slice(1)}`;
+        return `+91${trimmed}`;
+    };
+
+    const sendOtp = async () => {
+        const normalized = normalizePhone(mobileNumber);
+        if (!fullName.trim()) {
+            seterrorText('Please enter your name.');
+            return;
+        }
+        if (!normalized || normalized.length < 10) {
+            seterrorText('Please enter a valid phone number.');
+            return;
+        }
+        setloading(true);
+        seterrorText('');
+        try {
+            const provider = new PhoneAuthProvider(auth);
+            const verificationId = await provider.verifyPhoneNumber(
+                normalized,
+                recaptchaVerifier.current
+            );
+            navigation.push('auth/verificationScreen', {
+                verificationId,
+                phoneNumber: normalized,
+                fullName,
+                mode: 'register',
+            });
+        } catch (err) {
+            seterrorText('Failed to send OTP. Please try again.');
+        } finally {
+            setloading(false);
+        }
+    };
 
     function heroSection() {
         return (
@@ -50,11 +79,10 @@ const RegisterScreen = () => {
         return (
             <View style={styles.card}>
                 <Text style={styles.titleText}>Create Account</Text>
-                <Text style={styles.subtitleText}>Enter your details to get started</Text>
+                <Text style={styles.subtitleText}>Enter your name and phone number</Text>
                 {fullNameInfo()}
-                {emailInfo()}
                 {mobileNumberInfo()}
-                {passwordInfo()}
+                {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
                 {registerButton()}
                 {orDivider()}
                 {loginButton()}
@@ -76,10 +104,11 @@ const RegisterScreen = () => {
         return (
             <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={() => { navigation.push('auth/verificationScreen') }}
+                onPress={sendOtp}
                 style={styles.primaryButton}
+                disabled={loading}
             >
-                <Text style={styles.primaryButtonText}>Sign Up</Text>
+                <Text style={styles.primaryButtonText}>{loading ? 'Sending OTP...' : 'Send OTP'}</Text>
             </TouchableOpacity>
         )
     }
@@ -93,28 +122,6 @@ const RegisterScreen = () => {
             >
                 <Text style={styles.outlineButtonText}>Log In</Text>
             </TouchableOpacity>
-        )
-    }
-
-    function passwordInfo() {
-        return (
-            <View style={{ marginTop: Sizes.fixPadding * 1.8 }}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputRow}>
-                    <Feather name="lock" size={18} color={Colors.grayColor} />
-                    <TextInput
-                        placeholder='Enter password'
-                        placeholderTextColor={Colors.grayColor}
-                        value={password}
-                        onChangeText={(newVal) => setpassword(newVal)}
-                        cursorColor={Colors.primaryColor}
-                        selectionColor={Colors.primaryColor}
-                        style={styles.textFieldStyle}
-                        secureTextEntry={true}
-                        numberOfLines={1}
-                    />
-                </View>
-            </View>
         )
     }
 
@@ -133,28 +140,6 @@ const RegisterScreen = () => {
                         selectionColor={Colors.primaryColor}
                         style={styles.textFieldStyle}
                         keyboardType="phone-pad"
-                        numberOfLines={1}
-                    />
-                </View>
-            </View>
-        )
-    }
-
-    function emailInfo() {
-        return (
-            <View style={{ marginTop: Sizes.fixPadding * 1.8 }}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <View style={styles.inputRow}>
-                    <Feather name="mail" size={18} color={Colors.grayColor} />
-                    <TextInput
-                        placeholder='Enter email'
-                        placeholderTextColor={Colors.grayColor}
-                        value={email}
-                        onChangeText={(newVal) => setemail(newVal)}
-                        cursorColor={Colors.primaryColor}
-                        selectionColor={Colors.primaryColor}
-                        style={styles.textFieldStyle}
-                        keyboardType="email-address"
                         numberOfLines={1}
                     />
                 </View>
@@ -182,6 +167,25 @@ const RegisterScreen = () => {
             </View>
         )
     }
+
+    return (
+        <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
+            <MyStatusBar />
+            <ScrollView
+                automaticallyAdjustKeyboardInsets={true}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: Sizes.fixPadding * 2.0 }}
+            >
+                <FirebaseRecaptchaVerifierModal
+                    ref={recaptchaVerifier}
+                    firebaseConfig={firebaseConfig}
+                    attemptInvisibleVerification={true}
+                />
+                {heroSection()}
+                {cardSection()}
+            </ScrollView>
+        </View>
+    )
 }
 
 export default RegisterScreen
@@ -252,6 +256,12 @@ const styles = StyleSheet.create({
         flex: 1,
         marginLeft: Sizes.fixPadding,
         paddingVertical: 0,
+    },
+    errorText: {
+        marginTop: Sizes.fixPadding,
+        textAlign: 'center',
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
     },
     primaryButton: {
         marginTop: Sizes.fixPadding * 2.0,

@@ -26,9 +26,12 @@ exports.registerUser = onCall({ region: "asia-south1" }, async (request) => {
 
   const { name, email, phone } = request.data;
 
-  if (!name || !email) {
-    throw new HttpsError("invalid-argument", "name and email are required.");
+  if (!phone) {
+    throw new HttpsError("invalid-argument", "phone is required.");
   }
+
+  const safeName = name && String(name).trim() ? String(name).trim() : "Customer";
+  const safeEmail = email ? String(email).trim() : "";
 
   const userRef = db.collection(USERS).doc(request.auth.uid);
   const existingUser = await userRef.get();
@@ -38,9 +41,9 @@ exports.registerUser = onCall({ region: "asia-south1" }, async (request) => {
   }
 
   const userData = {
-    name,
-    email,
-    phone: phone || "",
+    name: safeName,
+    email: safeEmail,
+    phone,
     profilePicture: "",
     addresses: [],
     favorites: [],
@@ -574,59 +577,72 @@ exports.getProductsByCategory = onCall({ region: "asia-south1" }, async (request
  * Get home page data: categories, featured products, popular products (public)
  */
 exports.getHomePageData = onCall({ region: "asia-south1" }, async (_request) => {
-  // Fetch featured products
-  const featuredSnapshot = await db.collection(PRODUCTS)
-    .where("isActive", "==", true)
-    .where("featured", "==", true)
-    .limit(6)
-    .get();
+  let featured = [];
+  let popular = [];
+  let categories = [];
 
-  const featured = featuredSnapshot.docs.map((doc) => {
-    const data = doc.data();
-    return {
-      productId: doc.id,
-      name: data.name,
-      category: data.category,
-      image: data.images?.[0]?.url || "",
-      finalPrice: data.pricing?.finalPrice || 0,
-      metalType: data.metal?.type || "",
-    };
-  });
+  try {
+    const featuredSnapshot = await db.collection(PRODUCTS)
+      .where("isActive", "==", true)
+      .where("featured", "==", true)
+      .limit(6)
+      .get();
 
-  // Fetch popular products
-  const popularSnapshot = await db.collection(PRODUCTS)
-    .where("isActive", "==", true)
-    .orderBy("purchaseCount", "desc")
-    .limit(8)
-    .get();
+    featured = featuredSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        productId: doc.id,
+        name: data.name,
+        category: data.category,
+        image: data.images?.[0]?.url || "",
+        finalPrice: data.pricing?.finalPrice || 0,
+        metalType: data.metal?.type || "",
+      };
+    });
+  } catch (err) {
+    console.error("getHomePageData: featured query failed", err);
+  }
 
-  const popular = popularSnapshot.docs.map((doc) => {
-    const data = doc.data();
-    return {
-      productId: doc.id,
-      name: data.name,
-      category: data.category,
-      image: data.images?.[0]?.url || "",
-      finalPrice: data.pricing?.finalPrice || 0,
-      metalType: data.metal?.type || "",
-    };
-  });
+  try {
+    const popularSnapshot = await db.collection(PRODUCTS)
+      .where("isActive", "==", true)
+      .orderBy("createdAt", "desc")
+      .limit(8)
+      .get();
 
-  // Get distinct categories from all active products
-  const categoriesSnapshot = await db.collection(PRODUCTS)
-    .where("isActive", "==", true)
-    .select("category")
-    .get();
+    popular = popularSnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        productId: doc.id,
+        name: data.name,
+        category: data.category,
+        image: data.images?.[0]?.url || "",
+        finalPrice: data.pricing?.finalPrice || 0,
+        metalType: data.metal?.type || "",
+      };
+    });
+  } catch (err) {
+    console.error("getHomePageData: popular query failed", err);
+  }
 
-  const categoriesSet = new Set();
-  categoriesSnapshot.docs.forEach((doc) => {
-    const category = doc.data().category;
-    if (category) {
-      categoriesSet.add(category);
-    }
-  });
+  try {
+    const categoriesSnapshot = await db.collection(PRODUCTS)
+      .where("isActive", "==", true)
+      .select("category")
+      .get();
 
-  const categories = Array.from(categoriesSet).sort();
+    const categoriesSet = new Set();
+    categoriesSnapshot.docs.forEach((doc) => {
+      const category = doc.data().category;
+      if (category) {
+        categoriesSet.add(category);
+      }
+    });
+
+    categories = Array.from(categoriesSet).sort();
+  } catch (err) {
+    console.error("getHomePageData: categories query failed", err);
+  }
 
   return {
     categories,

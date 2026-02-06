@@ -1,4 +1,4 @@
-import { Text, View, ScrollView } from 'react-native'
+import { Text, View, ScrollView, Image } from 'react-native'
 import React from 'react'
 import { Colors, Fonts, Sizes, CommomStyles } from '../../constants/styles'
 import { MaterialIcons } from '@expo/vector-icons'
@@ -70,9 +70,10 @@ const TermsAndConditionScreen = () => {
         return (
             <View style={CommomStyles.headerStyle}>
                 <MaterialIcons name="keyboard-backspace" size={26} color={Colors.blackColor} onPress={() => { navigation.pop() }} />
-                <Text numberOfLines={1} style={{ ...Fonts.blackColor20SemiBold, marginLeft: Sizes.fixPadding * 2.0, }}>
-                    Terms & Conditions
-                </Text>
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Image source={require('../../assets/images/dp-logo-02.png')} style={CommomStyles.headerLogo} />
+                </View>
+                <View style={{ width: 26 }} />
             </View>
         )
     }

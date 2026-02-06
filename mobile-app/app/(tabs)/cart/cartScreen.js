@@ -1,54 +1,97 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, CommomStyles, Fonts, Screen, Sizes } from '../../../constants/styles';
 import { MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
+import { httpsCallable } from 'firebase/functions';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, functions } from '../../../lib/firebase';
 
-const cartsList = [
-    {
-        id: '1',
-        jewelleryImage: require('../../../assets/images/jewellery/jewellary1.png'),
-        jewelleryName: 'Silver Plated Ring',
-        size: 48,
-        amount: 120.00,
-        qty: 2,
-    },
-    {
-        id: '2',
-        jewelleryImage: require('../../../assets/images/jewellery/jewellary10.png'),
-        jewelleryName: 'Silver Grace Ring',
-        size: 46,
-        amount: 125.25,
-        qty: 1,
-    },
-    {
-        id: '3',
-        jewelleryImage: require('../../../assets/images/jewellery/jewellary3.png'),
-        jewelleryName: 'Diamond Earrings',
-        size: 'M',
-        amount: 149.50,
-        qty: 1,
-    },
-];
+const placeholderImage = require('../../../assets/images/jewellery/jewellary1.png');
 
 const CartScreen = () => {
 
     const navigation = useNavigation();
+    const router = useRouter();
 
-    const [cart, setcart] = useState(cartsList);
+    const [cart, setcart] = useState([]);
+    const [loading, setloading] = useState(true);
+    const [errorText, seterrorText] = useState('');
+    const [isAuthenticated, setIsAuthenticated] = useState(null);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setIsAuthenticated(true);
+                fetchCart();
+            } else {
+                setIsAuthenticated(false);
+                setloading(false);
+            }
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const fetchCart = async () => {
+        setloading(true);
+        seterrorText('');
+        try {
+            const getCart = httpsCallable(functions, 'getCart');
+            const res = await getCart();
+            setcart(res?.data?.cart || []);
+        } catch (err) {
+            seterrorText('Failed to load cart.');
+            setcart([]);
+        } finally {
+            setloading(false);
+        }
+    };
+
+    // Show login prompt for unauthenticated users
+    if (isAuthenticated === false) {
+        return (
+            <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
+                {header()}
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Sizes.fixPadding * 2 }}>
+                    <MaterialCommunityIcons name="shopping-outline" size={60} color={Colors.lightGrayColor} />
+                    <Text style={{ ...Fonts.blackColor18SemiBold, marginTop: Sizes.fixPadding * 2.0, textAlign: 'center' }}>
+                        Login to view your cart
+                    </Text>
+                    <Text style={{ ...Fonts.grayColor15Regular, marginTop: Sizes.fixPadding - 5, textAlign: 'center' }}>
+                        Sign in to add items to your cart and checkout
+                    </Text>
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => navigation.push('auth/loginScreen')}
+                        style={styles.loginButton}
+                    >
+                        <Text style={{ ...Fonts.whiteColor19Medium }}>
+                            Login
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    }
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <View style={{ flex: 1 }}>
                 {header()}
-                {
-                    cart.length == 0
-                        ?
-                        noCartItemsInfo()
-                        :
-                        cartItems()
-                }
-
+                {loading ? (
+                    <View style={styles.centerWrap}>
+                        <ActivityIndicator color={Colors.primaryColor} />
+                    </View>
+                ) : errorText ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                ) : cart.length == 0 ? (
+                    noCartItemsInfo()
+                ) : (
+                    cartItems()
+                )}
             </View>
         </View>
     )
@@ -56,10 +99,19 @@ const CartScreen = () => {
     function noCartItemsInfo() {
         return (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <MaterialCommunityIcons name="shopping-outline" size={26} color={Colors.lightGrayColor} />
+                <MaterialCommunityIcons name="shopping-outline" size={40} color={Colors.lightGrayColor} />
                 <Text style={{ ...Fonts.lightGrayColor18SemiBold, color: Colors.lightGrayColor, marginTop: Sizes.fixPadding - 5.0 }}>
                     Cart is Empty
                 </Text>
+                <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => router.replace('/(tabs)/home/homeScreen')}
+                    style={[styles.loginButton, { marginTop: Sizes.fixPadding * 2 }]}
+                >
+                    <Text style={{ ...Fonts.whiteColor19Medium }}>
+                        Start Shopping
+                    </Text>
+                </TouchableOpacity>
             </View>
         )
     }
@@ -83,7 +135,9 @@ const CartScreen = () => {
         return (
             <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => { navigation.push('selectAddress/selectAddressScreen') }}
+                onPress={() => {
+                    navigation.push('checkout/deliveryMethodScreen');
+                }}
                 style={{ ...CommomStyles.buttonStyle, marginTop: Sizes.fixPadding * 2.0 }}
             >
                 <Text style={{ ...Fonts.whiteColor19Medium }}>
@@ -94,7 +148,7 @@ const CartScreen = () => {
     }
 
     function totalInfo() {
-        const subTotal = cart.reduce((acc, item) => acc + item.qty * item.amount, 0);
+        const subTotal = cart.reduce((acc, item) => acc + (item.quantity || 0) * (item.finalPrice || 0), 0);
         const deliveryCharge = 0;
         const total = subTotal + deliveryCharge;
         return (
@@ -104,7 +158,7 @@ const CartScreen = () => {
                         Sub Total
                     </Text>
                     <Text style={{ textAlign: 'right', ...Fonts.blackColor16Regular, marginTop: Sizes.fixPadding - 5.0 }}>
-                        {`$`}{subTotal}
+                        {`₹ ${subTotal.toLocaleString('en-IN')}`}
                     </Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: Sizes.fixPadding, }}>
@@ -121,30 +175,40 @@ const CartScreen = () => {
                         Total
                     </Text>
                     <Text style={{ textAlign: 'right', ...Fonts.blackColor16SemiBold, }}>
-                        ${total}
+                        {`₹ ${total.toLocaleString('en-IN')}`}
                     </Text>
                 </View>
             </View>
         )
     }
 
-    function updateQty({ action, id }) {
-        const copyCart = cart;
-        const newCart = copyCart.map((item) => {
-            if (item.id == id) {
-                return { ...item, qty: action == 'add' ? item.qty + 1 : item.qty - 1 }
-            }
-            else {
-                return item
-            }
-        })
-        setcart(newCart);
+    async function updateQty({ productId, size, quantity }) {
+        try {
+            const updateCart = httpsCallable(functions, 'updateCart');
+            await updateCart({
+                action: 'update',
+                productId,
+                size: size || null,
+                quantity,
+            });
+            await fetchCart();
+        } catch (err) {
+            seterrorText('Failed to update cart.');
+        }
     }
 
-    function removeItem({ id }) {
-        const copyCart = cart;
-        const newCart = copyCart.filter((item) => item.id !== id)
-        setcart(newCart);
+    async function removeItem({ productId, size }) {
+        try {
+            const updateCart = httpsCallable(functions, 'updateCart');
+            await updateCart({
+                action: 'remove',
+                productId,
+                size: size || null,
+            });
+            await fetchCart();
+        } catch (err) {
+            seterrorText('Failed to remove item.');
+        }
     }
 
     function cartItemsInfo() {
@@ -153,43 +217,62 @@ const CartScreen = () => {
                 <View style={{ flexDirection: 'row', flex: 1, }}>
                     <View style={styles.jewelleryImageWrapStyle}>
                         <Image
-                            source={item.jewelleryImage}
+                            source={item.image ? { uri: item.image } : placeholderImage}
                             style={{ width: '80%', resizeMode: 'contain', height: '80%', }}
                         />
                     </View>
                     <View style={{ flex: 1, marginLeft: Sizes.fixPadding + 3.0, }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Sizes.fixPadding - 13.0, }}>
                             <Text numberOfLines={1} style={{ flex: 1, ...Fonts.blackColor16Regular, marginRight: Sizes.fixPadding - 5.0 }}>
-                                {item.jewelleryName}
+                                {item.name}
                             </Text>
                             <Text style={{ ...Fonts.blackColor16Regular }}>
-                                {`$`}{item.amount.toFixed(2)}
+                                {`₹ ${Number(item.finalPrice || 0).toLocaleString('en-IN')}`}
                             </Text>
                         </View>
                         <Text style={{ ...Fonts.grayColor14Regular, marginTop: -2.0 }}>
-                            Size: 48
+                            Size: {item.size || 'N/A'}
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Sizes.fixPadding - 4.0 }}>
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', }}>
                                 <TouchableOpacity
                                     activeOpacity={0.5}
-                                    onPress={() => { item.qty > 1 ? updateQty({ action: 'remove', id: item.id }) : null }}
+                                    onPress={() => {
+                                        if (item.quantity > 1) {
+                                            updateQty({
+                                                productId: item.productId,
+                                                size: item.size,
+                                                quantity: item.quantity - 1
+                                            })
+                                        }
+                                    }}
                                     style={styles.addRemoveBoxStyle}
                                 >
                                     <MaterialIcons name="remove" size={15} color={Colors.blackColor} />
                                 </TouchableOpacity>
                                 <Text style={{ ...Fonts.blackColor14Bold, marginHorizontal: Sizes.fixPadding + 5.0, }}>
-                                    {item.qty}
+                                    {item.quantity}
                                 </Text>
                                 <TouchableOpacity
                                     activeOpacity={0.5}
-                                    onPress={() => { updateQty({ action: 'add', id: item.id }) }}
+                                    onPress={() => {
+                                        updateQty({
+                                            productId: item.productId,
+                                            size: item.size,
+                                            quantity: (item.quantity || 0) + 1
+                                        })
+                                    }}
                                     style={styles.addRemoveBoxStyle}
                                 >
                                     <MaterialIcons name="add" size={15} color={Colors.blackColor} />
                                 </TouchableOpacity>
                             </View>
-                            <Feather name="trash-2" size={18} color={Colors.blackColor} onPress={() => { removeItem({ id: item.id }) }} />
+                            <Feather
+                                name="trash-2"
+                                size={18}
+                                color={Colors.blackColor}
+                                onPress={() => { removeItem({ productId: item.productId, size: item.size }) }}
+                            />
                         </View>
                     </View>
                 </View>
@@ -199,7 +282,7 @@ const CartScreen = () => {
             <View style={{ marginTop: Sizes.fixPadding * 2.0, }}>
                 <FlatList
                     data={cart}
-                    keyExtractor={(item) => `${item.id}`}
+                    keyExtractor={(item) => `${item.productId}-${item.size || 'na'}`}
                     renderItem={renderItem}
                     scrollEnabled={false}
                 />
@@ -209,10 +292,14 @@ const CartScreen = () => {
 
     function header() {
         return (
-            <View style={{ ...CommomStyles.headerStyle }}>
-                <Text style={{ ...Fonts.blackColor20SemiBold }}>
+            <View style={styles.headerStyle}>
+                <Text style={{ ...Fonts.blackColor18SemiBold, flex: 1 }}>
                     Shopping Cart
                 </Text>
+                <TouchableOpacity onPress={() => router.replace('/(tabs)/home/homeScreen')} activeOpacity={0.7}>
+                    <Image source={require('../../../assets/images/dp-logo-02.png')} style={styles.headerLogo} />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }} />
             </View>
         )
     }
@@ -221,6 +308,26 @@ const CartScreen = () => {
 export default CartScreen
 
 const styles = StyleSheet.create({
+    headerStyle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Sizes.fixPadding * 2.0,
+        paddingVertical: Sizes.fixPadding,
+        borderBottomColor: Colors.offWhiteColor,
+        borderBottomWidth: 1.0,
+    },
+    headerLogo: {
+        width: Screen.width / 6.5,
+        height: 30,
+        resizeMode: 'contain',
+    },
+    loginButton: {
+        backgroundColor: Colors.blackColor,
+        paddingHorizontal: Sizes.fixPadding * 4,
+        paddingVertical: Sizes.fixPadding + 2,
+        borderRadius: Sizes.fixPadding,
+        marginTop: Sizes.fixPadding * 2.5,
+    },
     addRemoveBoxStyle: {
         borderColor: Colors.offWhiteColor,
         borderWidth: 1.0,
@@ -261,5 +368,14 @@ const styles = StyleSheet.create({
         marginHorizontal: Sizes.fixPadding * 2.0,
         paddingTop: Sizes.fixPadding - 5.0,
         paddingBottom: Sizes.fixPadding - 3.0
-    }
+    },
+    centerWrap: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        ...Fonts.grayColor15Regular,
+        color: Colors.redColor,
+    },
 })

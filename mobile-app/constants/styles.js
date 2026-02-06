@@ -212,8 +212,13 @@ export const Fonts = {
         color: Colors.whiteColor,
         fontSize: 24.0,
         fontFamily: 'Mukta-ExtraBold'
-    }
+    },
 
+    whiteColor12Medium: {
+        color: Colors.whiteColor,
+        fontSize: 12.0,
+        fontFamily: 'Mukta-ExtraBold'
+    }
 }
 
 export const CommomStyles = {
@@ -223,6 +228,12 @@ export const CommomStyles = {
         padding: Sizes.fixPadding * 2.0,
         borderBottomColor: Colors.offWhiteColor,
         borderBottomWidth: 1.0,
+    },
+    headerLogo: {
+        width: Screen.width / 6.0,
+        height: Screen.width / 12.0,
+        resizeMode: 'contain',
+        marginRight: Sizes.fixPadding,
     },
     buttonStyle: {
         backgroundColor: Colors.blackColor,

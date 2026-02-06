@@ -12,16 +12,29 @@ const bannersList = [
     {
         id: '1',
         bannerHeader: 'Buy Your Elegant\nJewelry',
-        bannerImage: require('../../../assets/images/banner/banner.png')
+        bannerImage: require('../../../assets/images/banner-1.jpg')
     },
     {
         id: '2',
         bannerHeader: 'Exclusive\nCollection',
-        bannerImage: require('../../../assets/images/banner/banner.png')
+        bannerImage: require('../../../assets/images/banner-2.jpg')
     },
 ];
 
 const placeholderImage = require('../../../assets/images/jewellery/jewellary1.png');
+const categoryImageMap = {
+    Ring: require('../../../assets/images/ring.jpg'),
+    Necklace: require('../../../assets/images/neclace.jpg'),
+    Earring: require('../../../assets/images/earring.jpg'),
+    Bangle: require('../../../assets/images/bangle.jpg'),
+    Bracelet: require('../../../assets/images/bracelet.jpg'),
+    Pendant: require('../../../assets/images/pendant.jpg'),
+    Chain: require('../../../assets/images/chain.jpg'),
+    Anklet: require('../../../assets/images/anklet.jpeg'),
+    Mangalsutra: require('../../../assets/images/mangalsutra.webp'),
+    Kada: require('../../../assets/images/kada.jpg'),
+    Nosering: require('../../../assets/images/nosering.jpg'),
+};
 
 const HomeScreen = () => {
 
@@ -35,6 +48,7 @@ const HomeScreen = () => {
     const [showSnackBar, setShowSnackBar] = useState(false);
     const [snackText, setSnackText] = useState('');
     const [favoriteIds, setFavoriteIds] = useState([]);
+console.log("categories",categories);
 
     useEffect(() => {
         let active = true;
@@ -206,8 +220,8 @@ const HomeScreen = () => {
                 style={styles.categoryWiseItemWrapStyle}
             >
                 <Image
-                    source={placeholderImage}
-                    style={{ width: Screen.width / 4.5, height: Screen.width / 4.5, resizeMode: 'contain' }}
+                    source={categoryImageMap[item] || placeholderImage}
+                    style={{ width: Screen.width / 4.5, height: Screen.width / 4.5, resizeMode: 'cover' }}
                 />
                 <Text numberOfLines={1} style={styles.categoryWiseJewellaryTextStyle}>
                     {item}
@@ -312,9 +326,10 @@ const styles = StyleSheet.create({
         borderColor: Colors.offWhiteColor,
         borderWidth: 1.0,
         borderRadius: Sizes.fixPadding,
-        padding: Sizes.fixPadding + 5.0,
+        padding: 0,
         marginHorizontal: Sizes.fixPadding,
         alignItems: 'center',
+        overflow: 'hidden',
     },
     categoryWiseJewellaryTextStyle: {
         maxWidth: Screen.width / 4.5,

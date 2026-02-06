@@ -135,7 +135,7 @@ const VerificationScreen = () => {
                         setotpInput(text)
                     }}
                     theme={{
-                        inputsContainerStyle: { justifyContent: 'space-between' },
+                        inputsContainerStyle: { justifyContent: 'space-between', width: '100%' },
                         pinCodeContainerStyle: { ...styles.textFieldStyle },
                         pinCodeTextStyle: { ...Fonts.blackColor17Regular },
                     }}
@@ -198,8 +198,8 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderBottomWidth: 1.0,
         borderBottomColor: Colors.blackColor,
-        width: Screen.width / 5,
-        height: Screen.width / 8.5
+        width: Screen.width / 7.2,
+        height: Screen.width / 9.5
     },
     errorText: {
         marginTop: Sizes.fixPadding,

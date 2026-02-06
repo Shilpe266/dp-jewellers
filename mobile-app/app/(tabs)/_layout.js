@@ -86,10 +86,10 @@ export default function TabLayout() {
         initialRouteName="home/homeScreen"
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: Colors.primaryColor,
-          tabBarInactiveTintColor: Colors.blackColor,
+          tabBarActiveTintColor: Colors.whiteColor,
+          tabBarInactiveTintColor: Colors.whiteColor,
           tabBarShowLabel: false,
-          tabBarStyle: { height: 60.0 + insets.bottom, backgroundColor: Colors.whiteColor, paddingTop: Sizes.fixPadding, paddingBottom: insets.bottom },
+          tabBarStyle: { height: 60.0 + insets.bottom, backgroundColor: Colors.primaryColor, paddingTop: Sizes.fixPadding, paddingBottom: insets.bottom },
           tabBarHideOnKeyboard: true,
         }}
       >
@@ -110,6 +110,14 @@ export default function TabLayout() {
           name="search/searchScreen"
           options={{
             href: null, // Exclude from tab navigation - search is available at top
+            tabBarItemStyle: { display: 'none' },
+          }}
+        />
+        <Tabs.Screen
+          name="index"
+          options={{
+            href: null, // Prevent index route from rendering as a tab
+            tabBarItemStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
@@ -177,7 +185,7 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   dotStyle: {
-    backgroundColor: Colors.primaryColor,
+    backgroundColor: Colors.whiteColor,
     width: 6.0,
     height: 6.0,
     borderRadius: 3.0,

@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Colors, CommomStyles, Fonts, Screen, Sizes } from '../../../constants/styles'
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { Snackbar } from 'react-native-paper';
-import { useNavigation, useRouter } from 'expo-router';
+import { useNavigation, useRouter, useFocusEffect } from 'expo-router';
 import { httpsCallable } from 'firebase/functions';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, functions } from '../../../lib/firebase';
@@ -34,6 +34,15 @@ const FavoriteScreen = () => {
 
         return () => unsubscribe();
     }, []);
+
+    // Refresh favorites whenever the tab gains focus
+    useFocusEffect(
+        useCallback(() => {
+            if (auth?.currentUser) {
+                fetchFavorites();
+            }
+        }, [])
+    );
 
     const fetchFavorites = async () => {
         setloading(true);

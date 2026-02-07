@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { View, StyleSheet, BackHandler, Text } from 'react-native'
+import { View, StyleSheet, BackHandler, Text, DeviceEventEmitter } from 'react-native'
 import { Colors, Sizes, Fonts } from '../../constants/styles';
 import React, { useState, useCallback, useEffect } from 'react'
 import { useFocusEffect } from '@react-navigation/native';
@@ -50,6 +50,16 @@ export default function TabLayout() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Listen for cart/favorites updates from anywhere in the app
+  useEffect(() => {
+    const cartSub = DeviceEventEmitter.addListener('cartUpdated', fetchCounts);
+    const favSub = DeviceEventEmitter.addListener('favoritesUpdated', fetchCounts);
+    return () => {
+      cartSub.remove();
+      favSub.remove();
+    };
   }, []);
 
   const fetchCounts = async () => {

@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, Platform, ActivityIndicator, ScrollView } from 'react-native'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, Platform, ActivityIndicator, ScrollView, DeviceEventEmitter } from 'react-native'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Colors, Fonts, Sizes, Screen, CommomStyles } from '../../constants/styles'
 import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
@@ -620,6 +620,7 @@ const ProductDetailScreen = () => {
                 goldOption: selectedGoldOption || null,
                 quantity: 1,
             });
+            DeviceEventEmitter.emit('cartUpdated');
             setsnackText('Added to cart');
             setshowSnackBar(true);
         } catch (err) {
@@ -638,6 +639,7 @@ const ProductDetailScreen = () => {
             const action = isFavorite ? 'remove' : 'add';
             await updateFavorites({ action, productId });
             setisFavorite(!isFavorite);
+            DeviceEventEmitter.emit('favoritesUpdated');
             setsnackText(isFavorite ? 'Removed from favourite' : 'Added to favourite');
             setshowSnackBar(true);
         } catch (err) {

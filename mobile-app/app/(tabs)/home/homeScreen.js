@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ImageBackground, ActivityIndicator } from 'react-native'
+import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ImageBackground, ActivityIndicator, DeviceEventEmitter } from 'react-native'
 import React, { useEffect, useState, useCallback } from 'react'
 import { Colors, CommomStyles, Fonts, Sizes, Screen } from '../../../constants/styles'
 import { Feather } from '@expo/vector-icons';
@@ -94,6 +94,29 @@ console.log("categories",categories);
             fetchFavorites();
         }, [])
     );
+
+    // Refresh favorites when they change elsewhere (e.g., wishlist screen)
+    useEffect(() => {
+        const favSub = DeviceEventEmitter.addListener('favoritesUpdated', () => {
+            if (auth?.currentUser) {
+                const getFavorites = httpsCallable(functions, 'getFavorites');
+                getFavorites()
+                    .then((res) => {
+                        const favList = res?.data?.favorites || [];
+                        setFavoriteIds(favList.map(f => String(f.productId)));
+                    })
+                    .catch(() => {
+                        // Ignore error
+                    });
+            } else {
+                setFavoriteIds([]);
+            }
+        });
+
+        return () => {
+            favSub.remove();
+        };
+    }, []);
 
     // Add isFavorite property to products
     const addFavoriteStatus = (products) => {

@@ -1,5 +1,5 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, Image, TouchableOpacity, DeviceEventEmitter } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { Colors, Fonts, Sizes, Screen } from '../constants/styles'
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { useNavigation } from 'expo-router';
@@ -19,6 +19,10 @@ const ProductCard = ({
     const [isFavorite, setIsFavorite] = useState(item?.isFavorite || false);
     const [isAddingToCart, setIsAddingToCart] = useState(false);
     const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
+
+    useEffect(() => {
+        setIsFavorite(Boolean(item?.isFavorite));
+    }, [item?.isFavorite, item?.productId]);
 
     const handlePress = () => {
         navigation.push('productDetail/productDetailScreen', { productId: item.productId });
@@ -40,6 +44,7 @@ const ProductCard = ({
                 productId: item.productId,
                 quantity: 1,
             });
+            DeviceEventEmitter.emit('cartUpdated');
             showSnackBar?.('Added to cart');
         } catch (err) {
             showSnackBar?.('Failed to add to cart');
@@ -63,6 +68,7 @@ const ProductCard = ({
             await updateFavorites({ action, productId: item.productId });
             setIsFavorite(!isFavorite);
             onFavoriteChange?.(!isFavorite, item.productId);
+            DeviceEventEmitter.emit('favoritesUpdated');
             showSnackBar?.(isFavorite ? 'Removed from wishlist' : 'Added to wishlist');
         } catch (err) {
             showSnackBar?.('Failed to update wishlist');

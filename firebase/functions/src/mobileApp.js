@@ -541,7 +541,8 @@ exports.searchProducts = onCall({ region: "asia-south1" }, async (request) => {
       name: data.name,
       category: data.category,
       image: data.images?.[0]?.url || "",
-      finalPrice: data.pricing?.finalPrice || 0,
+      finalPrice: data.priceRange?.defaultPrice || data.pricing?.finalPrice || 0,
+      priceRange: data.priceRange || null,
       metalType: data.metal?.type || "",
     };
   });
@@ -603,7 +604,8 @@ exports.getProductsByCategory = onCall({ region: "asia-south1" }, async (request
       name: data.name,
       category: data.category,
       image: data.images?.[0]?.url || "",
-      finalPrice: data.pricing?.finalPrice || 0,
+      finalPrice: data.priceRange?.defaultPrice || data.pricing?.finalPrice || 0,
+      priceRange: data.priceRange || null,
       metalType: data.metal?.type || "",
     };
   });
@@ -637,7 +639,8 @@ exports.getHomePageData = onCall({ region: "asia-south1" }, async (_request) => 
         name: data.name,
         category: data.category,
         image: data.images?.[0]?.url || "",
-        finalPrice: data.pricing?.finalPrice || 0,
+        finalPrice: data.priceRange?.defaultPrice || data.pricing?.finalPrice || 0,
+        priceRange: data.priceRange || null,
         metalType: data.metal?.type || "",
       };
     });
@@ -659,7 +662,8 @@ exports.getHomePageData = onCall({ region: "asia-south1" }, async (_request) => 
         name: data.name,
         category: data.category,
         image: data.images?.[0]?.url || "",
-        finalPrice: data.pricing?.finalPrice || 0,
+        finalPrice: data.priceRange?.defaultPrice || data.pricing?.finalPrice || 0,
+        priceRange: data.priceRange || null,
         metalType: data.metal?.type || "",
       };
     });

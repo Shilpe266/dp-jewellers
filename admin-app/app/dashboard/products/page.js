@@ -62,6 +62,7 @@ const diamondQualityBuckets = ['SI_IJ', 'SI_GH', 'VS_GH', 'VVS_EF', 'IF_DEF'];
 const diamondQualityLabels = { SI_IJ: 'SI-IJ', SI_GH: 'SI-GH', VS_GH: 'VS-GH', VVS_EF: 'VVS-EF', IF_DEF: 'IF-DEF' };
 const emptyDiamondVariant = { count: '', shape: '', caratWeight: '', settingType: '', clarity: '', color: '', cut: '' };
 const emptyMetalVariant = { type: '', purity: '', netWeight: '', grossWeight: '', goldOptions: [] };
+const emptySizeWeight = { size: '', weightAdjustment: '' };
 
 const getSizeConfig = (category) => {
   switch (category) {
@@ -205,6 +206,16 @@ export default function ProductsPage() {
         metalVariants = [{ ...emptyMetalVariant }];
       }
 
+      const configurator = product.configurator || {};
+      const cfgEnabled = Boolean(configurator?.enabled);
+      const cfgMetalOptions = configurator?.metalOptions || [];
+      const cfgAvailablePurities = {};
+      const cfgDefaultPurity = {};
+      cfgMetalOptions.forEach((m, idx) => {
+        cfgAvailablePurities[idx] = m.availablePurities || [];
+        cfgDefaultPurity[idx] = m.defaultPurity || (m.availablePurities?.[0] || '');
+      });
+
       setFormData({
         name: product.name || '',
         productCode: product.productCode || '',
@@ -231,6 +242,13 @@ export default function ProductsPage() {
         huidNumber: product.certifications?.certificateNumber || '',
         stoneDetails: product.gemstones?.length > 0 ? product.gemstones.map(g => `${g.caratWeight || ''} ct ${g.type || ''}`).join(', ') : '',
         status: product.status || (product.isActive !== false ? 'active' : 'inactive'),
+        configuratorEnabled: cfgEnabled,
+        availablePurities: cfgAvailablePurities,
+        defaultPurity: cfgDefaultPurity,
+        availableDiamondQualities: configurator?.diamondOptions?.availableQualities || [],
+        defaultDiamondQuality: configurator?.diamondOptions?.defaultQuality || 'SI_IJ',
+        sizeWeights: configurator?.sizeWeights || [],
+        defaultSize: configurator?.defaultSize || '',
       });
       setShowDiamond(diamond.hasDiamond || false);
       setExistingImages(product.images || []);
@@ -321,6 +339,69 @@ export default function ProductsPage() {
         }
         return { ...v, goldOptions: [...current, option] };
       }),
+    }));
+  };
+
+  const handleConfiguratorToggle = (checked) => {
+    setFormData((prev) => ({
+      ...prev,
+      configuratorEnabled: checked,
+    }));
+  };
+
+  const toggleAvailablePurity = (index, purity) => {
+    setFormData((prev) => {
+      const current = prev.availablePurities?.[index] || [];
+      const next = current.includes(purity)
+        ? current.filter((p) => p !== purity)
+        : [...current, purity];
+      return {
+        ...prev,
+        availablePurities: { ...prev.availablePurities, [index]: next },
+        defaultPurity: next.includes(prev.defaultPurity?.[index]) ? prev.defaultPurity : { ...prev.defaultPurity, [index]: next[0] || '' },
+      };
+    });
+  };
+
+  const setDefaultPurity = (index, purity) => {
+    setFormData((prev) => ({
+      ...prev,
+      defaultPurity: { ...prev.defaultPurity, [index]: purity },
+    }));
+  };
+
+  const toggleDiamondQuality = (quality) => {
+    setFormData((prev) => {
+      const current = prev.availableDiamondQualities || [];
+      const next = current.includes(quality)
+        ? current.filter((q) => q !== quality)
+        : [...current, quality];
+      return {
+        ...prev,
+        availableDiamondQualities: next,
+        defaultDiamondQuality: next.includes(prev.defaultDiamondQuality) ? prev.defaultDiamondQuality : (next[0] || 'SI_IJ'),
+      };
+    });
+  };
+
+  const handleAddSizeWeight = () => {
+    setFormData((prev) => ({
+      ...prev,
+      sizeWeights: [...prev.sizeWeights, { ...emptySizeWeight }],
+    }));
+  };
+
+  const handleRemoveSizeWeight = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      sizeWeights: prev.sizeWeights.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSizeWeightChange = (index, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      sizeWeights: prev.sizeWeights.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
     }));
   };
 
@@ -601,6 +682,30 @@ export default function ProductsPage() {
         } : {},
         status: formData.status,
       };
+
+      if (formData.configuratorEnabled) {
+        productData.configurator = {
+          enabled: true,
+          metalOptions: formData.metalVariants.map((m, i) => ({
+            type: (m.type || '').toLowerCase(),
+            availablePurities: formData.availablePurities?.[i] || [],
+            defaultPurity: formData.defaultPurity?.[i] || '',
+            availableColors: m.goldOptions || [],
+            defaultColor: (m.goldOptions || [])[0] || '',
+            baseNetWeight: Number(m.netWeight) || 0,
+            baseGrossWeight: Number(m.grossWeight) || 0,
+          })),
+          diamondOptions: formData.hasDiamond ? {
+            availableQualities: formData.availableDiamondQualities || [],
+            defaultQuality: formData.defaultDiamondQuality || 'SI_IJ',
+          } : null,
+          sizeWeights: (formData.sizeWeights || []).map((s) => ({
+            size: String(s.size || '').trim(),
+            weightAdjustment: Number(s.weightAdjustment) || 0,
+          })),
+          defaultSize: formData.defaultSize || formData.sizes?.[0] || '',
+        };
+      }
 
       if (editingProduct) {
         const updateProduct = httpsCallable(functions, 'updateProduct');
@@ -984,7 +1089,168 @@ export default function ProductsPage() {
 
           <Divider sx={{ mb: 3 }} />
 
-          {/* Section 3: Diamond Details */}
+          {/* Section 3: Configurator Options */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#1E1B4B' }}>
+              Configurator Options
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={formData.configuratorEnabled}
+                  onChange={(e) => handleConfiguratorToggle(e.target.checked)}
+                  sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#1E1B4B' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#1E1B4B' } }}
+                />
+              }
+              label="Enable"
+            />
+          </Box>
+
+          {formData.configuratorEnabled && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body2" sx={{ color: '#666', mb: 1.5 }}>
+                Metal Purity Options
+              </Typography>
+              {formData.metalVariants.map((metal, index) => (
+                <Box key={`cfg-metal-${index}`} sx={{ mb: 2, p: 2, backgroundColor: '#f9f9f9', borderRadius: 2 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Metal {index + 1} {metal.type ? `(${metal.type})` : ''}
+                  </Typography>
+                  {metal.type ? (
+                    <>
+                      <FormGroup row>
+                        {getPuritiesForMetal(metal.type).map((purity) => (
+                          <FormControlLabel
+                            key={`${index}-${purity}`}
+                            control={
+                              <Checkbox
+                                checked={(formData.availablePurities?.[index] || []).includes(purity)}
+                                onChange={() => toggleAvailablePurity(index, purity)}
+                                sx={{ color: '#1E1B4B', '&.Mui-checked': { color: '#1E1B4B' } }}
+                              />
+                            }
+                            label={purity}
+                          />
+                        ))}
+                      </FormGroup>
+                      <TextField
+                        select
+                        size="small"
+                        label="Default Purity"
+                        value={formData.defaultPurity?.[index] || ''}
+                        onChange={(e) => setDefaultPurity(index, e.target.value)}
+                        sx={{ mt: 1, minWidth: 160 }}
+                      >
+                        {(formData.availablePurities?.[index] || []).map((p) => (
+                          <MenuItem key={`${index}-default-${p}`} value={p}>{p}</MenuItem>
+                        ))}
+                      </TextField>
+                    </>
+                  ) : (
+                    <Typography variant="caption" sx={{ color: '#999' }}>
+                      Select metal type to configure purities.
+                    </Typography>
+                  )}
+                </Box>
+              ))}
+
+              {formData.hasDiamond && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+                    Diamond Quality Options
+                  </Typography>
+                  <FormGroup row>
+                    {diamondQualityBuckets.map((q) => (
+                      <FormControlLabel
+                        key={q}
+                        control={
+                          <Checkbox
+                            checked={(formData.availableDiamondQualities || []).includes(q)}
+                            onChange={() => toggleDiamondQuality(q)}
+                            sx={{ color: '#1E1B4B', '&.Mui-checked': { color: '#1E1B4B' } }}
+                          />
+                        }
+                        label={diamondQualityLabels[q] || q}
+                      />
+                    ))}
+                  </FormGroup>
+                  <TextField
+                    select
+                    size="small"
+                    label="Default Diamond Quality"
+                    value={formData.defaultDiamondQuality || 'SI_IJ'}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, defaultDiamondQuality: e.target.value }))}
+                    sx={{ mt: 1, minWidth: 200 }}
+                  >
+                    {(formData.availableDiamondQualities || []).map((q) => (
+                      <MenuItem key={`default-${q}`} value={q}>{diamondQualityLabels[q] || q}</MenuItem>
+                    ))}
+                  </TextField>
+                </Box>
+              )}
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+                  Size Weight Adjustments
+                </Typography>
+                <Grid container spacing={1} sx={{ mb: 1 }}>
+                  <Grid item xs={5}><Typography variant="caption" sx={{ color: '#666' }}>Size</Typography></Grid>
+                  <Grid item xs={5}><Typography variant="caption" sx={{ color: '#666' }}>Weight Adjustment (g)</Typography></Grid>
+                  <Grid item xs={2} />
+                </Grid>
+                {formData.sizeWeights.map((row, idx) => (
+                  <Grid container spacing={1} key={`size-weight-${idx}`} sx={{ mb: 1 }}>
+                    <Grid item xs={5}>
+                      <TextField
+                        size="small"
+                        fullWidth
+                        value={row.size}
+                        onChange={(e) => handleSizeWeightChange(idx, 'size', e.target.value)}
+                        placeholder="e.g., 14"
+                      />
+                    </Grid>
+                    <Grid item xs={5}>
+                      <TextField
+                        size="small"
+                        fullWidth
+                        type="number"
+                        value={row.weightAdjustment}
+                        onChange={(e) => handleSizeWeightChange(idx, 'weightAdjustment', e.target.value)}
+                        placeholder="e.g., 0.00"
+                      />
+                    </Grid>
+                    <Grid item xs={2}>
+                      <IconButton size="small" onClick={() => handleRemoveSizeWeight(idx)} sx={{ color: '#d32f2f' }}>
+                        <Close sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Grid>
+                  </Grid>
+                ))}
+                <Button size="small" startIcon={<Add />} onClick={handleAddSizeWeight}
+                  sx={{ textTransform: 'none', color: '#1E1B4B' }}
+                >
+                  Add Size Weight
+                </Button>
+              </Box>
+
+              <TextField
+                select
+                size="small"
+                label="Default Size"
+                value={formData.defaultSize || ''}
+                onChange={(e) => setFormData((prev) => ({ ...prev, defaultSize: e.target.value }))}
+                sx={{ minWidth: 200 }}
+              >
+                {(formData.sizes || []).map((s) => (
+                  <MenuItem key={`default-size-${s}`} value={s}>{s}</MenuItem>
+                ))}
+              </TextField>
+            </Box>
+          )}
+
+          <Divider sx={{ mb: 3 }} />
+
+          {/* Section 4: Diamond Details */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, cursor: 'pointer' }}
             onClick={() => {
               setShowDiamond(!showDiamond);

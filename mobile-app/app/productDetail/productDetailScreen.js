@@ -20,6 +20,10 @@ const ProductDetailScreen = () => {
 
     const [selectedSize, setselectedSize] = useState('');
     const [selectedGoldOption, setSelectedGoldOption] = useState('');
+    const [selectedPurity, setSelectedPurity] = useState('');
+    const [selectedDiamondQuality, setSelectedDiamondQuality] = useState('');
+    const [variantPricing, setVariantPricing] = useState(null);
+    const [pricingLoading, setPricingLoading] = useState(false);
     const [isFavorite, setisFavorite] = useState(false);
     const [showSnackBar, setshowSnackBar] = useState(false);
     const [snackText, setsnackText] = useState('');
@@ -56,13 +60,26 @@ const ProductDetailScreen = () => {
                 const res = await getProduct({ productId });
                 if (active) {
                     setproduct(res.data);
-                    if (res.data?.sizes?.length) {
-                        setselectedSize(res.data.sizes[0]);
-                    }
-                    // Set default gold option
-                    const goldOptions = res.data?.goldOptions || res.data?.metals?.[0]?.goldOptions || [];
-                    if (goldOptions.length > 0) {
-                        setSelectedGoldOption(goldOptions[0]);
+                    const cfg = res.data?.configurator;
+                    if (cfg?.enabled) {
+                        const metalCfg = cfg.metalOptions?.[0] || {};
+                        setSelectedPurity(metalCfg.defaultPurity || metalCfg.availablePurities?.[0] || '');
+                        setSelectedDiamondQuality(cfg.diamondOptions?.defaultQuality || cfg.diamondOptions?.availableQualities?.[0] || 'SI_IJ');
+                        setSelectedGoldOption(metalCfg.defaultColor || metalCfg.availableColors?.[0] || '');
+                        if (cfg.defaultSize) {
+                            setselectedSize(cfg.defaultSize);
+                        } else if (res.data?.sizes?.length) {
+                            setselectedSize(res.data.sizes[0]);
+                        }
+                    } else {
+                        if (res.data?.sizes?.length) {
+                            setselectedSize(res.data.sizes[0]);
+                        }
+                        // Set default gold option
+                        const goldOptions = res.data?.goldOptions || res.data?.metals?.[0]?.goldOptions || [];
+                        if (goldOptions.length > 0) {
+                            setSelectedGoldOption(goldOptions[0]);
+                        }
                     }
                 }
             } catch (err) {
@@ -109,6 +126,37 @@ const ProductDetailScreen = () => {
         return map[option] || option;
     };
 
+    const fetchVariantPrice = async (purity, quality, size) => {
+        if (!productId) return;
+        setPricingLoading(true);
+        try {
+            const calc = httpsCallable(functions, 'calculateVariantPrice');
+            const res = await calc({
+                productId,
+                selectedPurities: [purity],
+                selectedDiamondQuality: quality,
+                selectedSize: size,
+            });
+            setVariantPricing(res.data);
+        } catch (err) {
+            // Ignore errors for now
+        } finally {
+            setPricingLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!product?.configurator?.enabled) {
+            setVariantPricing(null);
+            return;
+        }
+        if (!selectedPurity) return;
+        const t = setTimeout(() => {
+            fetchVariantPrice(selectedPurity, selectedDiamondQuality, selectedSize);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [product?.configurator?.enabled, selectedPurity, selectedDiamondQuality, selectedSize, productId]);
+
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <MyStatusBar />
@@ -127,7 +175,9 @@ const ProductDetailScreen = () => {
                         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
                             {productImage()}
                             {productNameAndPriceInfo()}
+                            {puritySelector()}
                             {goldOptionsInfo()}
+                            {diamondQualitySelector()}
                             {productSizeInfo()}
                             {productDescriptionInfo()}
                             {collapsibleSections()}
@@ -383,7 +433,7 @@ const ProductDetailScreen = () => {
     }
 
     function priceBreakupSection() {
-        const pricing = product?.pricing || {};
+        const pricing = variantPricing || product?.pricing || {};
         const metalValue = pricing.metalValue || 0;
         const diamondValue = pricing.diamondValue || 0;
         const makingChargeAmount = pricing.makingChargeAmount || 0;
@@ -478,8 +528,79 @@ const ProductDetailScreen = () => {
         )
     }
 
+    function puritySelector() {
+        const cfg = product?.configurator;
+        const purities = cfg?.metalOptions?.[0]?.availablePurities || [];
+        if (!cfg?.enabled || purities.length === 0) return null;
+
+        return (
+            <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
+                <Text style={{ ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding - 5 }}>
+                    Metal Purity
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {purities.map((p) => (
+                        <TouchableOpacity
+                            key={p}
+                            activeOpacity={0.8}
+                            onPress={() => setSelectedPurity(p)}
+                            style={[
+                                styles.pillChip,
+                                selectedPurity === p && styles.pillChipSelected
+                            ]}
+                        >
+                            <Text style={[
+                                styles.pillChipText,
+                                selectedPurity === p && styles.pillChipTextSelected
+                            ]}>
+                                {p}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+        )
+    }
+
+    function diamondQualitySelector() {
+        const cfg = product?.configurator;
+        const qualities = cfg?.diamondOptions?.availableQualities || [];
+        if (!cfg?.enabled || !product?.diamond?.hasDiamond || qualities.length === 0) return null;
+        const formatQuality = (q) => String(q || '').replace('_', '-');
+
+        return (
+            <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
+                <Text style={{ ...Fonts.blackColor16Medium, marginBottom: Sizes.fixPadding - 5 }}>
+                    Diamond Quality
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {qualities.map((q) => (
+                        <TouchableOpacity
+                            key={q}
+                            activeOpacity={0.8}
+                            onPress={() => setSelectedDiamondQuality(q)}
+                            style={[
+                                styles.pillChip,
+                                selectedDiamondQuality === q && styles.pillChipSelected
+                            ]}
+                        >
+                            <Text style={[
+                                styles.pillChipText,
+                                selectedDiamondQuality === q && styles.pillChipTextSelected
+                            ]}>
+                                {formatQuality(q)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+        )
+    }
+
     function goldOptionsInfo() {
-        const goldOptions = product?.goldOptions || product?.metals?.[0]?.goldOptions || [];
+        const goldOptions = product?.configurator?.enabled
+            ? (product?.configurator?.metalOptions?.[0]?.availableColors || [])
+            : (product?.goldOptions || product?.metals?.[0]?.goldOptions || []);
         if (goldOptions.length === 0) return null;
 
         return (
@@ -546,6 +667,11 @@ const ProductDetailScreen = () => {
                     contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding + 3.0 }}
                     showsHorizontalScrollIndicator={false}
                 />
+                {product?.configurator?.enabled && product?.configurator?.metalOptions?.[0]?.baseNetWeight && product?.configurator?.defaultSize && (
+                    <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding - 5, ...Fonts.grayColor14Regular }}>
+                        Gold weight: {product.configurator.metalOptions[0].baseNetWeight}g for size {product.configurator.defaultSize}
+                    </Text>
+                )}
             </View>
         )
     }
@@ -562,9 +688,14 @@ const ProductDetailScreen = () => {
                             {product?.category || ''}{product?.subCategory ? ` • ${product.subCategory}` : ''}
                         </Text>
                     </View>
-                    <Text style={{ ...Fonts.primaryColor18Bold }}>
-                        {`₹ ${Number(product?.pricing?.finalPrice || 0).toLocaleString('en-IN')}`}
-                    </Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={{ ...Fonts.primaryColor18Bold }}>
+                            {`₹ ${Number(variantPricing?.finalPrice || product?.pricing?.finalPrice || 0).toLocaleString('en-IN')}`}
+                        </Text>
+                        {pricingLoading && (
+                            <ActivityIndicator size="small" color={Colors.primaryColor} style={{ marginTop: 4 }} />
+                        )}
+                    </View>
                 </View>
                 {product?.productCode && (
                     <Text style={{ ...Fonts.grayColor14Regular, marginTop: 4 }}>
@@ -618,6 +749,8 @@ const ProductDetailScreen = () => {
                 productId,
                 size: selectedSize || null,
                 goldOption: selectedGoldOption || null,
+                selectedPurity: selectedPurity || null,
+                selectedDiamondQuality: selectedDiamondQuality || null,
                 quantity: 1,
             });
             DeviceEventEmitter.emit('cartUpdated');
@@ -834,6 +967,25 @@ const styles = StyleSheet.create({
         ...Fonts.primaryColor18Bold,
     },
     // Gold Options Styles
+    pillChip: {
+        borderColor: Colors.offWhiteColor,
+        borderWidth: 1.0,
+        borderRadius: Sizes.fixPadding - 5.0,
+        paddingHorizontal: Sizes.fixPadding,
+        paddingVertical: Sizes.fixPadding - 5.0,
+        marginRight: Sizes.fixPadding,
+        marginBottom: Sizes.fixPadding - 5,
+    },
+    pillChipSelected: {
+        borderColor: Colors.primaryColor,
+        backgroundColor: Colors.primaryColor + '10',
+    },
+    pillChipText: {
+        ...Fonts.grayColor14Regular,
+    },
+    pillChipTextSelected: {
+        ...Fonts.primaryColor14Medium,
+    },
     goldOptionChip: {
         flexDirection: 'row',
         alignItems: 'center',

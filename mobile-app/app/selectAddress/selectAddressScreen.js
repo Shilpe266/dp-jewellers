@@ -20,6 +20,24 @@ const SelectAddressScreen = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
+    const formatAddressType = (type) => {
+        if (!type) return 'Address';
+        const normalized = String(type).trim();
+        return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Address';
+    };
+
+    const formatAddress = (address) => {
+        if (!address) return '';
+        const parts = [
+            address.addressLine1 || address.completeAddress || address.address || '',
+            address.addressLine2 || '',
+            address.city || '',
+            address.state || '',
+            address.pincode || '',
+        ].filter(Boolean);
+        return parts.join(', ');
+    };
+
     useFocusEffect(
         useCallback(() => {
             fetchAddresses();
@@ -31,12 +49,14 @@ const SelectAddressScreen = () => {
             const getAddresses = httpsCallable(functions, 'getAddresses');
             const res = await getAddresses();
             const addressList = res?.data?.addresses || [];
-            setAddresses(addressList);
+            const indexed = addressList.map((addr, index) => ({ ...addr, _index: index }));
+            setAddresses(indexed);
 
             // Auto-select first address or default address
-            if (addressList.length > 0) {
-                const defaultAddr = addressList.find(a => a.isDefault);
-                setSelectedAddressId(defaultAddr?.id || addressList[0].id);
+            if (indexed.length > 0) {
+                const defaultAddr = indexed.find(a => a.isDefault);
+                const fallback = indexed[0];
+                setSelectedAddressId(defaultAddr?.id ?? defaultAddr?._index ?? fallback.id ?? fallback._index);
             }
         } catch (err) {
             console.log('Error fetching addresses:', err);
@@ -54,7 +74,7 @@ const SelectAddressScreen = () => {
     const handleNext = () => {
         if (!selectedAddressId) return;
 
-        const selectedAddress = addresses.find(a => a.id === selectedAddressId);
+        const selectedAddress = addresses.find(a => (a.id ?? a._index) === selectedAddressId);
         if (!selectedAddress) return;
 
         navigation.push('checkout/orderSummaryScreen', {
@@ -142,18 +162,18 @@ const SelectAddressScreen = () => {
     }
 
     function addressesInfo() {
-        const renderItem = ({ item }) => (
+        const renderItem = ({ item, index }) => (
             <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => { setSelectedAddressId(item.id) }}
+                onPress={() => { setSelectedAddressId(item.id ?? item._index ?? index) }}
                 style={{
                     ...styles.addressWrapStyle,
-                    borderColor: selectedAddressId === item.id ? Colors.blackColor : Colors.offWhiteColor,
+                    borderColor: selectedAddressId === (item.id ?? item._index ?? index) ? Colors.blackColor : Colors.offWhiteColor,
                 }}
             >
                 <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ ...Fonts.blackColor18Medium }}>{item.addressType || 'Address'}</Text>
+                        <Text style={{ ...Fonts.blackColor18Medium }}>{formatAddressType(item.addressType)}</Text>
                         {item.isDefault && (
                             <View style={styles.defaultBadge}>
                                 <Text style={{ ...Fonts.whiteColor12Medium }}>Default</Text>
@@ -164,21 +184,66 @@ const SelectAddressScreen = () => {
                         {item.name} | {item.phone || item.mobileNo}
                     </Text>
                     <Text style={{ lineHeight: 23.0, ...Fonts.grayColor15Regular }}>
-                        {item.addressLine1}{item.addressLine2 ? `, ${item.addressLine2}` : ''}
+                        {formatAddress(item)}
                     </Text>
-                    <Text style={{ ...Fonts.grayColor15Regular }}>
-                        {item.city}, {item.state} - {item.pincode}
-                    </Text>
-                </View>
-                <View style={[styles.radioOuter, selectedAddressId === item.id && styles.radioOuterSelected]}>
-                    {selectedAddressId === item.id && <View style={styles.radioInner} />}
+                    <View style={styles.addressActionsRow}>
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => {
+                                navigation.push('addNewAddress/addNewAddressScreen', {
+                                    mode: 'edit',
+                                    addressIndex: item._index ?? index,
+                                    address: JSON.stringify(item),
+                                });
+                            }}
+                            style={styles.addressActionButton}
+                        >
+                            <Text style={styles.addressActionText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={async () => {
+                                try {
+                                    const manageAddress = httpsCallable(functions, 'manageAddress');
+                                    await manageAddress({
+                                        action: 'setDefault',
+                                        addressIndex: item._index ?? index,
+                                    });
+                                    fetchAddresses();
+                                } catch (err) {
+                                    console.log('Error setting default address:', err);
+                                }
+                            }}
+                            style={styles.addressActionButton}
+                        >
+                            <Text style={styles.addressActionText}>Set Default</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={async () => {
+                                try {
+                                    const manageAddress = httpsCallable(functions, 'manageAddress');
+                                    await manageAddress({
+                                        action: 'delete',
+                                        addressIndex: item._index ?? index,
+                                    });
+                                    fetchAddresses();
+                                } catch (err) {
+                                    console.log('Error deleting address:', err);
+                                }
+                            }}
+                            style={styles.addressActionButton}
+                        >
+                            <Text style={styles.addressActionText}>Delete</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </TouchableOpacity>
         )
         return (
             <FlatList
                 data={addresses}
-                keyExtractor={(item) => `${item.id}`}
+                keyExtractor={(item, index) => `${item.id ?? item._index ?? index}`}
                 renderItem={renderItem}
                 contentContainerStyle={{ paddingTop: Sizes.fixPadding * 2.0, paddingBottom: Sizes.fixPadding * 2.0 }}
                 ListFooterComponent={addAddressInfo()}
@@ -219,6 +284,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: Sizes.fixPadding + 5.0,
         paddingVertical: Sizes.fixPadding,
     },
+    addressActionsRow: {
+        flexDirection: 'row',
+        marginTop: Sizes.fixPadding,
+    },
+    addressActionButton: {
+        borderWidth: 1.0,
+        borderColor: Colors.blackColor,
+        borderRadius: Sizes.fixPadding - 2.0,
+        paddingHorizontal: Sizes.fixPadding + 5.0,
+        paddingVertical: Sizes.fixPadding - 6.0,
+        marginRight: Sizes.fixPadding,
+    },
+    addressActionText: {
+        ...Fonts.blackColor14Medium,
+    },
     addAddressWrapStyle: {
         borderColor: Colors.lightGrayColor,
         borderWidth: 1.0,
@@ -235,24 +315,5 @@ const styles = StyleSheet.create({
         paddingVertical: 2,
         borderRadius: 4,
         marginLeft: Sizes.fixPadding,
-    },
-    radioOuter: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        borderWidth: 2,
-        borderColor: Colors.lightGrayColor,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: Sizes.fixPadding,
-    },
-    radioOuterSelected: {
-        borderColor: Colors.blackColor,
-    },
-    radioInner: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        backgroundColor: Colors.blackColor,
     },
 })

@@ -1,10 +1,10 @@
 import { StyleSheet, Text, View, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Colors, Fonts, Sizes, CommomStyles } from '../../constants/styles'
 import { MaterialIcons } from '@expo/vector-icons';
 import SelectDropdown from 'react-native-select-dropdown'
 import MyStatusBar from '../../components/myStatusBar';
-import { useNavigation, useRouter } from 'expo-router';
+import { useNavigation, useRouter, useLocalSearchParams } from 'expo-router';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../lib/firebase';
 
@@ -14,6 +14,9 @@ const AddNewAddressScreen = () => {
 
     const navigation = useNavigation();
     const router = useRouter();
+    const params = useLocalSearchParams();
+    const mode = params.mode;
+    const addressIndex = params.addressIndex !== undefined ? Number(params.addressIndex) : null;
 
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
@@ -24,7 +27,29 @@ const AddNewAddressScreen = () => {
     const [pincode, setPincode] = useState('');
     const [addressType, setAddressType] = useState('');
     const [isDefault, setIsDefault] = useState(false);
+    const [initialIsDefault, setInitialIsDefault] = useState(false);
     const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (mode !== 'edit' || !params.address) return;
+        try {
+            const parsed = JSON.parse(params.address);
+            setName(parsed.name || '');
+            setPhone(parsed.phone || parsed.mobileNo || parsed.contactNumber || '');
+            setAddressLine1(parsed.addressLine1 || parsed.completeAddress || parsed.address || '');
+            setAddressLine2(parsed.addressLine2 || '');
+            setCity(parsed.city || '');
+            setState(parsed.state || '');
+            setPincode(parsed.pincode || '');
+            const type = parsed.addressType ? String(parsed.addressType) : '';
+            setAddressType(type ? type.charAt(0).toUpperCase() + type.slice(1) : '');
+            const def = Boolean(parsed.isDefault);
+            setIsDefault(def);
+            setInitialIsDefault(def);
+        } catch (err) {
+            // Ignore parse errors
+        }
+    }, [mode, params.address]);
 
     const validateForm = () => {
         if (!name.trim()) {
@@ -64,27 +89,50 @@ const AddNewAddressScreen = () => {
         setSaving(true);
         try {
             const manageAddress = httpsCallable(functions, 'manageAddress');
-            await manageAddress({
-                action: 'add',
-                address: {
-                    addressType: addressType.toLowerCase(),
-                    name: name.trim(),
-                    phone: phone.trim(),
-                    addressLine1: addressLine1.trim(),
-                    addressLine2: addressLine2.trim(),
-                    city: city.trim(),
-                    state: state.trim(),
-                    pincode: pincode.trim(),
-                    isDefault,
-                },
-            });
+            if (mode === 'edit' && addressIndex !== null && !Number.isNaN(addressIndex)) {
+                await manageAddress({
+                    action: 'update',
+                    addressIndex,
+                    address: {
+                        addressType: addressType.toLowerCase(),
+                        name: name.trim(),
+                        phone: phone.trim(),
+                        addressLine1: addressLine1.trim(),
+                        addressLine2: addressLine2.trim(),
+                        city: city.trim(),
+                        state: state.trim(),
+                        pincode: pincode.trim(),
+                    },
+                });
+                if (isDefault && !initialIsDefault) {
+                    await manageAddress({
+                        action: 'setDefault',
+                        addressIndex,
+                    });
+                }
+            } else {
+                await manageAddress({
+                    action: 'add',
+                    address: {
+                        addressType: addressType.toLowerCase(),
+                        name: name.trim(),
+                        phone: phone.trim(),
+                        addressLine1: addressLine1.trim(),
+                        addressLine2: addressLine2.trim(),
+                        city: city.trim(),
+                        state: state.trim(),
+                        pincode: pincode.trim(),
+                        isDefault,
+                    },
+                });
+            }
 
-            Alert.alert('Success', 'Address added successfully', [
+            Alert.alert('Success', mode === 'edit' ? 'Address updated successfully' : 'Address added successfully', [
                 { text: 'OK', onPress: () => navigation.pop() }
             ]);
         } catch (err) {
             console.log('Error adding address:', err);
-            Alert.alert('Error', err.message || 'Failed to add address. Please try again.');
+            Alert.alert('Error', err.message || 'Failed to save address. Please try again.');
         } finally {
             setSaving(false);
         }
@@ -143,7 +191,7 @@ const AddNewAddressScreen = () => {
                     <ActivityIndicator color={Colors.whiteColor} />
                 ) : (
                     <Text style={{ ...Fonts.whiteColor19Medium }}>
-                        Add Address
+                        {mode === 'edit' ? 'Update Address' : 'Add Address'}
                     </Text>
                 )}
             </TouchableOpacity>

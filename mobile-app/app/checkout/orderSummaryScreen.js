@@ -28,6 +28,24 @@ const OrderSummaryScreen = () => {
     const [cartItems, setCartItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [processingPayment, setProcessingPayment] = useState(false);
+
+    const formatAddressType = (type) => {
+        if (!type) return 'Address';
+        const normalized = String(type).trim();
+        return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Address';
+    };
+
+    const formatAddress = (address) => {
+        if (!address) return '';
+        const parts = [
+            address.addressLine1 || address.completeAddress || address.address || '',
+            address.addressLine2 || '',
+            address.city || '',
+            address.state || '',
+            address.pincode || '',
+        ].filter(Boolean);
+        return parts.join(', ');
+    };
     const [paymentOption, setPaymentOption] = useState('full'); // 'full' or 'partial' (only for pickup)
 
     const isPickup = deliveryMethod === 'store_pickup';
@@ -317,12 +335,12 @@ const OrderSummaryScreen = () => {
                             </>
                         ) : (
                             <>
-                                <Text style={{ ...Fonts.blackColor14SemiBold }}>{selectedAddress?.addressType}</Text>
+                                <Text style={{ ...Fonts.blackColor14SemiBold }}>{formatAddressType(selectedAddress?.addressType)}</Text>
                                 <Text style={{ ...Fonts.grayColor14Regular, marginTop: 2 }}>
                                     {selectedAddress?.name} | {selectedAddress?.mobileNo}
                                 </Text>
                                 <Text style={{ ...Fonts.grayColor14Regular }}>
-                                    {selectedAddress?.address}
+                                    {formatAddress(selectedAddress)}
                                 </Text>
                             </>
                         )}

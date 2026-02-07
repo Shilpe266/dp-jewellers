@@ -16,6 +16,24 @@ const ShippingAddressesScreen = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
+    const formatAddressType = (type) => {
+        if (!type) return 'Address';
+        const normalized = String(type).trim();
+        return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Address';
+    };
+
+    const formatAddress = (address) => {
+        if (!address) return '';
+        const parts = [
+            address.addressLine1 || address.completeAddress || address.address || '',
+            address.addressLine2 || '',
+            address.city || '',
+            address.state || '',
+            address.pincode || '',
+        ].filter(Boolean);
+        return parts.join(', ');
+    };
+
     useFocusEffect(
         useCallback(() => {
             fetchAddresses();
@@ -106,7 +124,7 @@ const ShippingAddressesScreen = () => {
             <View style={styles.addressWrapStyle}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={{ ...Fonts.blackColor18Medium, flex: 1 }}>
-                        {item.addressType || 'Address'}
+                        {formatAddressType(item.addressType)}
                     </Text>
                     {item.isDefault && (
                         <View style={styles.defaultBadge}>
@@ -118,14 +136,8 @@ const ShippingAddressesScreen = () => {
                     {item.name} | {item.phone || item.contactNumber}
                 </Text>
                 <Text style={{ lineHeight: 23.0, ...Fonts.grayColor15Regular }}>
-                    {item.addressLine1 || item.completeAddress}
-                    {item.addressLine2 ? `, ${item.addressLine2}` : ''}
+                    {formatAddress(item)}
                 </Text>
-                {(item.city || item.state || item.pincode) && (
-                    <Text style={{ ...Fonts.grayColor15Regular }}>
-                        {[item.city, item.state, item.pincode].filter(Boolean).join(', ')}
-                    </Text>
-                )}
             </View>
         )
         return (

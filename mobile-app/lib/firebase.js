@@ -25,11 +25,12 @@ const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
 let auth;
 try {
-  auth = getAuth(app);
-} catch (err) {
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(ReactNativeAsyncStorage),
   });
+} catch (err) {
+  // If already initialized, fall back to the existing instance.
+  auth = getAuth(app);
 }
 
 const db = getFirestore(app);

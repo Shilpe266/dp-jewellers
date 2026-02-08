@@ -99,7 +99,7 @@ export default function TabLayout() {
           tabBarActiveTintColor: Colors.whiteColor,
           tabBarInactiveTintColor: Colors.whiteColor,
           tabBarShowLabel: false,
-          tabBarStyle: { height: 60.0 + insets.bottom, backgroundColor: Colors.primaryColor, paddingTop: Sizes.fixPadding, paddingBottom: insets.bottom },
+          tabBarStyle: { height: 60.0 + insets.bottom, backgroundColor: Colors.blackColor, paddingTop: Sizes.fixPadding, paddingBottom: insets.bottom },
           tabBarHideOnKeyboard: true,
         }}
       >

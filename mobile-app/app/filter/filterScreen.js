@@ -49,24 +49,23 @@ const FilterScreen = () => {
     // Source page info
     const [fromCategory, setFromCategory] = useState('');
 
-    useEffect(() => {
-        // Initialize from params
-        const metal = params?.material ? String(params.material) : '';
-        const purity = params?.purity ? String(params.purity) : '';
-        const goldColor = params?.goldColor ? String(params.goldColor) : '';
-        const diamond = params?.diamond ? String(params.diamond) : '';
-        const minPrice = params?.minPrice ? Number(params.minPrice) : 0;
-        const maxPrice = params?.maxPrice ? Number(params.maxPrice) : 500000;
-        const category = params?.category ? String(params.category) : '';
+    const materialParam = params?.material ? String(params.material) : '';
+    const purityParam = params?.purity ? String(params.purity) : '';
+    const goldColorParam = params?.goldColor ? String(params.goldColor) : '';
+    const diamondParam = params?.diamond ? String(params.diamond) : '';
+    const minPriceParam = params?.minPrice ? Number(params.minPrice) : 0;
+    const maxPriceParam = params?.maxPrice ? Number(params.maxPrice) : 500000;
+    const categoryParam = params?.category ? String(params.category) : '';
 
-        setSelectedMetal(metal);
-        setSelectedPurity(purity);
-        setSelectedGoldColor(goldColor);
-        setSelectedDiamond(diamond);
-        setLowRange(isNaN(minPrice) ? 0 : minPrice);
-        setHighRange(isNaN(maxPrice) ? 500000 : maxPrice);
-        setFromCategory(category);
-    }, [params]);
+    useEffect(() => {
+        setSelectedMetal(materialParam);
+        setSelectedPurity(purityParam);
+        setSelectedGoldColor(goldColorParam);
+        setSelectedDiamond(diamondParam);
+        setLowRange(isNaN(minPriceParam) ? 0 : minPriceParam);
+        setHighRange(isNaN(maxPriceParam) ? 500000 : maxPriceParam);
+        setFromCategory(categoryParam);
+    }, [materialParam, purityParam, goldColorParam, diamondParam, minPriceParam, maxPriceParam, categoryParam]);
 
     const handleApply = () => {
         const filters = {
@@ -79,14 +78,18 @@ const FilterScreen = () => {
         };
 
         if (fromCategory) {
-            // Navigate back to category page with filters
-            navigation.navigate('categoryWiseProducts/categoryWiseProductsScreen', {
-                category: fromCategory,
-                ...filters,
+            router.replace({
+                pathname: '/categoryWiseProducts/categoryWiseProductsScreen',
+                params: {
+                    category: fromCategory,
+                    ...filters,
+                },
             });
         } else {
-            // Navigate to search with filters
-            navigation.navigate('(tabs)/search/searchScreen', filters);
+            router.replace({
+                pathname: '/(tabs)/search/searchScreen',
+                params: filters,
+            });
         }
     };
 

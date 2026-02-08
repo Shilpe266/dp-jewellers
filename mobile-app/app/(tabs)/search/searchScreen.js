@@ -84,6 +84,9 @@ const SearchScreen = () => {
         return () => { active = false; };
     }, [search, filters.material, filters.purity, filters.goldColor, filters.diamond, filters.minPrice, filters.maxPrice]);
 
+    const hasQuery = search.trim().length > 0;
+    const hasFilter = Boolean(filters.material || filters.purity || filters.goldColor || filters.diamond || filters.minPrice || filters.maxPrice);
+
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
             <View style={{ flex: 1 }}>
@@ -98,6 +101,12 @@ const SearchScreen = () => {
                     </View>
                 ) : results.length > 0 ? (
                     resultsList()
+                ) : (hasQuery || hasFilter) ? (
+                    <View style={styles.centerWrap}>
+                        <Text style={{ ...Fonts.lightGrayColor18SemiBold, color: Colors.lightGrayColor }}>
+                            No products found
+                        </Text>
+                    </View>
                 ) : (
                     <ScrollView
                         automaticallyAdjustKeyboardInsets={true}

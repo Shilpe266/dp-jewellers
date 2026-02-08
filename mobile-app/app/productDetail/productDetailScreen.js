@@ -27,6 +27,7 @@ const ProductDetailScreen = () => {
     const [isFavorite, setisFavorite] = useState(false);
     const [showSnackBar, setshowSnackBar] = useState(false);
     const [snackText, setsnackText] = useState('');
+    const [addedToCart, setAddedToCart] = useState(false);
     const [product, setproduct] = useState(null);
     const [loading, setloading] = useState(true);
     const [errorText, seterrorText] = useState('');
@@ -94,6 +95,29 @@ const ProductDetailScreen = () => {
         fetchProduct();
         return () => { active = false; };
     }, [productId]);
+
+    useFocusEffect(
+        useCallback(() => {
+            let active = true;
+            const checkCartStatus = async () => {
+                if (!auth?.currentUser || !productId) {
+                    if (active) setAddedToCart(false);
+                    return;
+                }
+                try {
+                    const getCart = httpsCallable(functions, 'getCart');
+                    const res = await getCart();
+                    const cartItems = res?.data?.cart || [];
+                    const exists = cartItems.some((item) => item.productId === productId);
+                    if (active) setAddedToCart(exists);
+                } catch (err) {
+                    if (active) setAddedToCart(false);
+                }
+            };
+            checkCartStatus();
+            return () => { active = false; };
+        }, [productId])
+    );
 
     // Check favorites status on screen focus - this ensures heart icon persists on refresh
     useFocusEffect(
@@ -246,12 +270,18 @@ const ProductDetailScreen = () => {
             <View style={[styles.bottomButtonContainer, { paddingBottom: Sizes.fixPadding + insets.bottom }]}>
                 <TouchableOpacity
                     activeOpacity={0.5}
-                    onPress={handleAddToCart}
+                    onPress={() => {
+                        if (addedToCart) {
+                            router.push('/(tabs)/cart/cartScreen');
+                        } else {
+                            handleAddToCart();
+                        }
+                    }}
                     style={styles.addToCartButton}
                 >
                     <Feather name="shopping-bag" size={20} color={Colors.whiteColor} style={{ marginRight: 8 }} />
                     <Text style={{ ...Fonts.whiteColor19Medium }}>
-                        Add to Cart
+                        {addedToCart ? 'Go to Cart' : 'Add to Cart'}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -850,6 +880,7 @@ const ProductDetailScreen = () => {
             DeviceEventEmitter.emit('cartUpdated');
             setsnackText('Added to cart');
             setshowSnackBar(true);
+            setAddedToCart(true);
         } catch (err) {
             setsnackText('Failed to add to cart');
             setshowSnackBar(true);

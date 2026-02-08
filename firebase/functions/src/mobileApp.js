@@ -153,7 +153,7 @@ exports.getCart = onCall({ region: "asia-south1" }, async (request) => {
       if (item.selectedPurity && product.configurator?.enabled && rates) {
         const variantPricing = _calculateVariantPriceInternal(
           product, rates, taxSettings, makingChargesConfig,
-          [item.selectedPurity], item.selectedDiamondQuality, item.size
+          item.selectedPurity, item.selectedDiamondQuality, item.size
         );
         finalPrice = variantPricing.finalPrice;
       }

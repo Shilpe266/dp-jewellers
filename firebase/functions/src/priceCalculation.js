@@ -106,7 +106,9 @@ exports.calculateProductPrice = onCall({ region: "asia-south1" }, async (request
  * Used by the mobile app when a customer changes purity, diamond quality, or size.
  */
 exports.calculateVariantPrice = onCall({ region: "asia-south1" }, async (request) => {
-  const { productId, selectedPurities, selectedDiamondQuality, selectedSize } = request.data || {};
+  const { productId, selectedPurity, selectedPurities, selectedDiamondQuality, selectedSize } = request.data || {};
+  // Accept both new (string) and old (array) format for backward compat
+  const purity = selectedPurity || (selectedPurities && selectedPurities[0]) || null;
 
   if (!productId) {
     throw new HttpsError("invalid-argument", "productId is required.");
@@ -141,62 +143,83 @@ exports.calculateVariantPrice = onCall({ region: "asia-south1" }, async (request
 
   const variantPricing = calculateVariantPriceInternal(
     product, rates, taxSettings, makingChargesConfig,
-    selectedPurities || [], selectedDiamondQuality, selectedSize
+    purity, selectedDiamondQuality, selectedSize
   );
 
   return variantPricing;
 });
 
 /**
- * Internal variant price calculation.
- * Calculates price for a specific combination of purity, diamond quality, and size.
+ * Get metal rate per gram for a given type and purity.
  */
-function calculateVariantPriceInternal(product, rates, taxSettings, makingChargesConfig, selectedPurities, selectedDiamondQuality, selectedSize) {
+function getMetalRate(type, purity, rates) {
+  if (type === "gold" && purity && rates.gold) return rates.gold[purity] || 0;
+  if (type === "silver" && purity && rates.silver) return rates.silver[purity] || 0;
+  if (type === "platinum" && rates.platinum) return rates.platinum[purity] || rates.platinum.perGram || 0;
+  return 0;
+}
+
+/**
+ * Internal variant price calculation (v2 - purity-centric).
+ * Calculates price for a specific purity, diamond quality, and size combination.
+ */
+function calculateVariantPriceInternal(product, rates, taxSettings, makingChargesConfig, selectedPurity, selectedDiamondQuality, selectedSize) {
   const configurator = product.configurator || {};
-  const metalOptions = configurator.metalOptions || [];
+  const configMetal = configurator.configurableMetal || {};
+  const fixedMetals = configurator.fixedMetals || [];
   const pricing = product.pricing || {};
   const diamond = product.diamond || {};
 
-  // Calculate weight adjustment for selected size
-  let weightAdjustment = 0;
-  if (selectedSize && configurator.sizeWeights) {
-    const sizeEntry = configurator.sizeWeights.find((s) => s.size === selectedSize);
+  // Find the variant matching selectedPurity
+  const variants = configMetal.variants || [];
+  const variant = variants.find((v) => v.purity === selectedPurity)
+    || variants.find((v) => v.purity === configMetal.defaultPurity)
+    || variants[0];
+
+  if (!variant) {
+    // Fallback: return stored pricing if no variants defined
+    return pricing;
+  }
+
+  // Determine weight for the configurable metal from size or base weight
+  let configurableNetWeight = variant.netWeight || 0;
+  if (selectedSize && variant.sizes && variant.sizes.length > 0) {
+    const sizeEntry = variant.sizes.find((s) => s.size === selectedSize);
     if (sizeEntry) {
-      weightAdjustment = sizeEntry.weightAdjustment || 0;
+      configurableNetWeight = sizeEntry.netWeight || configurableNetWeight;
     }
   }
 
-  // Calculate metal value across all metal options
+  // Calculate configurable metal value
   let totalMetalValue = 0;
   let totalNetWeight = 0;
   const metalBreakdown = [];
 
-  for (let i = 0; i < metalOptions.length; i++) {
-    const metalOpt = metalOptions[i];
-    const purity = (selectedPurities && selectedPurities[i]) || metalOpt.defaultPurity;
-    const baseWeight = metalOpt.baseNetWeight || 0;
-    // Apply size weight adjustment only to the primary (first) metal
-    const netWeight = i === 0 ? baseWeight + weightAdjustment : baseWeight;
-    let ratePerGram = 0;
+  const cfgRate = getMetalRate(configMetal.type, variant.purity, rates);
+  const cfgMetalValue = configurableNetWeight * cfgRate;
+  totalMetalValue += cfgMetalValue;
+  totalNetWeight += configurableNetWeight;
+  metalBreakdown.push({
+    type: configMetal.type,
+    purity: variant.purity,
+    netWeight: Math.round(configurableNetWeight * 1000) / 1000,
+    ratePerGram: cfgRate,
+    value: Math.round(cfgMetalValue),
+  });
 
-    if (metalOpt.type === "gold" && purity && rates.gold) {
-      ratePerGram = rates.gold[purity] || 0;
-    } else if (metalOpt.type === "silver" && purity && rates.silver) {
-      ratePerGram = rates.silver[purity] || 0;
-    } else if (metalOpt.type === "platinum" && rates.platinum) {
-      ratePerGram = rates.platinum[purity] || rates.platinum.perGram || 0;
-    }
-
-    const metalValue = netWeight * ratePerGram;
-    totalMetalValue += metalValue;
-    totalNetWeight += netWeight;
-
+  // Add fixed metals
+  for (const fm of fixedMetals) {
+    const fmRate = getMetalRate(fm.type, fm.purity, rates);
+    const fmNetWeight = fm.netWeight || 0;
+    const fmValue = fmNetWeight * fmRate;
+    totalMetalValue += fmValue;
+    totalNetWeight += fmNetWeight;
     metalBreakdown.push({
-      type: metalOpt.type,
-      purity,
-      netWeight: Math.round(netWeight * 1000) / 1000,
-      ratePerGram,
-      value: Math.round(metalValue),
+      type: fm.type,
+      purity: fm.purity,
+      netWeight: Math.round(fmNetWeight * 1000) / 1000,
+      ratePerGram: fmRate,
+      value: Math.round(fmValue),
     });
   }
 
@@ -206,7 +229,7 @@ function calculateVariantPriceInternal(product, rates, taxSettings, makingCharge
   const totalCaratWeight = diamond.totalCaratWeight || 0;
 
   if (diamond.hasDiamond && totalCaratWeight > 0 && rates.diamond) {
-    const qualityBucket = selectedDiamondQuality || configurator.diamondOptions?.defaultQuality || "SI_IJ";
+    const qualityBucket = selectedDiamondQuality || variant.defaultDiamondQuality || "SI_IJ";
     diamondRatePerCarat = rates.diamond[qualityBucket] || rates.diamond["SI_IJ"] || 25000;
     diamondValue = totalCaratWeight * diamondRatePerCarat;
   }
@@ -260,7 +283,7 @@ function calculateVariantPriceInternal(product, rates, taxSettings, makingCharge
     metalValue: Math.round(totalMetalValue),
     totalNetWeight: Math.round(totalNetWeight * 1000) / 1000,
     diamondRatePerCarat,
-    diamondQuality: selectedDiamondQuality || configurator.diamondOptions?.defaultQuality || null,
+    diamondQuality: selectedDiamondQuality || variant?.defaultDiamondQuality || null,
     diamondValue: Math.round(diamondValue),
     gemstoneValue,
     makingChargeType: mcType,
@@ -285,8 +308,8 @@ function calculateVariantPriceInternal(product, rates, taxSettings, makingCharge
 }
 
 /**
- * Compute min/max/default price range for a configurator-enabled product.
- * Iterates all purity + diamond quality combos (at default size) to find extremes.
+ * Compute min/max/default price range for a configurator-enabled product (v2).
+ * Iterates all purity variants × diamond qualities × size weight extremes.
  */
 function computePriceRange(product, rates, taxSettings, makingChargesConfig) {
   const configurator = product.configurator;
@@ -295,64 +318,58 @@ function computePriceRange(product, rates, taxSettings, makingChargesConfig) {
     return { minPrice: fp, maxPrice: fp, defaultPrice: fp };
   }
 
-  const metalOptions = configurator.metalOptions || [];
-  if (metalOptions.length === 0) {
+  const configMetal = configurator.configurableMetal || {};
+  const variants = configMetal.variants || [];
+  if (variants.length === 0) {
     const fp = product.pricing?.finalPrice || 0;
     return { minPrice: fp, maxPrice: fp, defaultPrice: fp };
   }
-
-  // Collect all purity combinations for the first metal (primary driver of price variation)
-  const primaryMetal = metalOptions[0];
-  const purities = primaryMetal.availablePurities || [primaryMetal.defaultPurity];
-  const diamondQualities = configurator.diamondOptions?.availableQualities || [];
-  const hasDiamond = product.diamond?.hasDiamond && diamondQualities.length > 0;
-
-  // Also consider size extremes for weight adjustment
-  const sizeWeights = configurator.sizeWeights || [];
-  const weightAdjustments = sizeWeights.length > 0
-    ? sizeWeights.map((s) => s.weightAdjustment || 0)
-    : [0];
-  const minWeightAdj = Math.min(...weightAdjustments);
-  const maxWeightAdj = Math.max(...weightAdjustments);
 
   let minPrice = Infinity;
   let maxPrice = -Infinity;
   let defaultPrice = 0;
 
-  const diamondOptions = hasDiamond ? diamondQualities : [null];
+  for (const variant of variants) {
+    const diamondQualities = (variant.availableDiamondQualities || []).length > 0
+      ? variant.availableDiamondQualities
+      : [null];
 
-  for (const purity of purities) {
-    for (const dq of diamondOptions) {
-      // Check both min and max weight adjustments
-      for (const wAdj of [minWeightAdj, maxWeightAdj]) {
-        const selectedPurities = [purity];
-        // Temporarily set sizeWeights to simulate this weight adjustment
-        const tempProduct = {
-          ...product,
-          configurator: {
-            ...configurator,
-            sizeWeights: [{ size: "__temp", weightAdjustment: wAdj }],
-          },
-        };
+    // Determine size extremes for this variant
+    const sizes = variant.sizes || [];
+    let sizeOptions;
+    if (sizes.length > 0) {
+      const weights = sizes.map((s) => s.netWeight || 0);
+      const minWeight = Math.min(...weights);
+      const maxWeight = Math.max(...weights);
+      const minSizeEntry = sizes.find((s) => (s.netWeight || 0) === minWeight);
+      const maxSizeEntry = sizes.find((s) => (s.netWeight || 0) === maxWeight);
+      sizeOptions = [minSizeEntry.size, maxSizeEntry.size];
+      // Deduplicate if same
+      if (sizeOptions[0] === sizeOptions[1]) sizeOptions = [sizeOptions[0]];
+    } else {
+      sizeOptions = [null]; // use base weight
+    }
+
+    for (const dq of diamondQualities) {
+      for (const sz of sizeOptions) {
         const result = calculateVariantPriceInternal(
-          tempProduct, rates, taxSettings, makingChargesConfig,
-          selectedPurities, dq, "__temp"
+          product, rates, taxSettings, makingChargesConfig,
+          variant.purity, dq, sz
         );
-
         if (result.finalPrice < minPrice) minPrice = result.finalPrice;
         if (result.finalPrice > maxPrice) maxPrice = result.finalPrice;
       }
+    }
 
-      // Calculate default price
-      const isDefaultPurity = purity === primaryMetal.defaultPurity;
-      const isDefaultDiamond = !hasDiamond || dq === configurator.diamondOptions?.defaultQuality;
-      if (isDefaultPurity && isDefaultDiamond) {
-        const defaultResult = calculateVariantPriceInternal(
-          product, rates, taxSettings, makingChargesConfig,
-          [purity], dq, configurator.defaultSize || null
-        );
-        defaultPrice = defaultResult.finalPrice;
-      }
+    // Calculate default price for the default variant
+    if (variant.purity === configMetal.defaultPurity) {
+      const defaultDQ = variant.defaultDiamondQuality || null;
+      const defaultSz = variant.defaultSize || null;
+      const defaultResult = calculateVariantPriceInternal(
+        product, rates, taxSettings, makingChargesConfig,
+        variant.purity, defaultDQ, defaultSz
+      );
+      defaultPrice = defaultResult.finalPrice;
     }
   }
 

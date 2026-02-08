@@ -61,18 +61,19 @@ const ProductDetailScreen = () => {
                 if (active) {
                     setproduct(res.data);
                     const cfg = res.data?.configurator;
-                    if (cfg?.enabled) {
-                        const metalCfg = cfg.metalOptions?.[0] || {};
-                        setSelectedPurity(metalCfg.defaultPurity || metalCfg.availablePurities?.[0] || '');
-                        setSelectedDiamondQuality(cfg.diamondOptions?.defaultQuality || cfg.diamondOptions?.availableQualities?.[0] || 'SI_IJ');
-                        setSelectedGoldOption(metalCfg.defaultColor || metalCfg.availableColors?.[0] || '');
-                        if (cfg.defaultSize) {
-                            setselectedSize(cfg.defaultSize);
-                        } else if (res.data?.sizes?.length) {
-                            setselectedSize(res.data.sizes[0]);
+                    if (cfg?.enabled && cfg.configurableMetal) {
+                        const cm = cfg.configurableMetal;
+                        const defaultVariant = cm.variants?.find(v => v.purity === cm.defaultPurity) || cm.variants?.[0];
+                        setSelectedPurity(cm.defaultPurity || defaultVariant?.purity || '');
+                        if (defaultVariant) {
+                            setSelectedDiamondQuality(defaultVariant.defaultDiamondQuality || '');
+                            setSelectedGoldOption(defaultVariant.defaultColor || '');
+                            setselectedSize(defaultVariant.defaultSize || '');
                         }
                     } else {
-                        if (res.data?.sizes?.length) {
+                        if (res.data?.defaultSize) {
+                            setselectedSize(res.data.defaultSize);
+                        } else if (res.data?.sizes?.length) {
                             setselectedSize(res.data.sizes[0]);
                         }
                         // Set default gold option
@@ -133,7 +134,7 @@ const ProductDetailScreen = () => {
             const calc = httpsCallable(functions, 'calculateVariantPrice');
             const res = await calc({
                 productId,
-                selectedPurities: [purity],
+                selectedPurity: purity,
                 selectedDiamondQuality: quality,
                 selectedSize: size,
             });
@@ -156,6 +157,41 @@ const ProductDetailScreen = () => {
         }, 300);
         return () => clearTimeout(t);
     }, [product?.configurator?.enabled, selectedPurity, selectedDiamondQuality, selectedSize, productId]);
+
+    // Helper: get the currently selected purity variant
+    const getCurrentVariant = () => {
+        const cfg = product?.configurator;
+        if (!cfg?.enabled || !cfg.configurableMetal) return null;
+        return cfg.configurableMetal.variants?.find(v => v.purity === selectedPurity)
+            || cfg.configurableMetal.variants?.[0]
+            || null;
+    };
+
+    // Cascade selections when purity changes
+    useEffect(() => {
+        const cfg = product?.configurator;
+        if (!cfg?.enabled || !cfg.configurableMetal) return;
+        const variant = cfg.configurableMetal.variants?.find(v => v.purity === selectedPurity);
+        if (!variant) return;
+
+        // If current color not available in new variant, use variant default
+        const availableColors = variant.availableColors || [];
+        if (availableColors.length > 0 && !availableColors.includes(selectedGoldOption)) {
+            setSelectedGoldOption(variant.defaultColor || availableColors[0] || '');
+        }
+
+        // If current diamond quality not available, use variant default
+        const availableDQ = variant.availableDiamondQualities || [];
+        if (availableDQ.length > 0 && !availableDQ.includes(selectedDiamondQuality)) {
+            setSelectedDiamondQuality(variant.defaultDiamondQuality || availableDQ[0] || '');
+        }
+
+        // If current size not available, use variant default
+        const availableSizes = (variant.sizes || []).map(s => s.size);
+        if (availableSizes.length > 0 && !availableSizes.includes(selectedSize)) {
+            setselectedSize(variant.defaultSize || availableSizes[0] || '');
+        }
+    }, [selectedPurity, product]);
 
     return (
         <View style={{ flex: 1, backgroundColor: Colors.whiteColor }}>
@@ -303,7 +339,7 @@ const ProductDetailScreen = () => {
                         )}
                         <DetailRow
                             label="Product Weight"
-                            value={metal?.grossWeight ? `${metal.grossWeight} gram` : (metal?.netWeight ? `${metal.netWeight} gram` : '-')}
+                            value={variantPricing?.totalNetWeight ? `${variantPricing.totalNetWeight} gram` : (metal?.grossWeight ? `${metal.grossWeight} gram` : (metal?.netWeight ? `${metal.netWeight} gram` : '-'))}
                         />
                         {product?.certifications?.certificateNumber && (
                             <DetailRow label="HUID Number" value={product.certifications.certificateNumber} />
@@ -338,6 +374,9 @@ const ProductDetailScreen = () => {
                     <View style={styles.collapsibleContent}>
                         <DetailRow label="Total Weight" value={`${totalWeight} Ct`} highlight />
                         <DetailRow label="Total No. Of Diamonds" value={`${totalCount}`} />
+                        {variantPricing?.diamondQuality && (
+                            <DetailRow label="Quality" value={String(variantPricing.diamondQuality).replace('_', '-')} />
+                        )}
 
                         {variants.length > 0 && (
                             <View style={styles.diamondVariantsTable}>
@@ -370,7 +409,8 @@ const ProductDetailScreen = () => {
     function metalDetailsSection() {
         const metals = product?.metals || [];
         const metal = product?.metal || metals[0] || {};
-        const goldOptions = product?.goldOptions || metal?.goldOptions || [];
+        const isConfigurator = product?.configurator?.enabled;
+        const metalBreakdown = variantPricing?.metalBreakdown || [];
 
         const formatMetalType = (type, purity) => {
             if (!type) return '-';
@@ -378,7 +418,7 @@ const ProductDetailScreen = () => {
             if (purity) {
                 formatted = `${purity} ${formatted}`;
             }
-            if (goldOptions.length > 0 && selectedGoldOption) {
+            if (selectedGoldOption) {
                 formatted += ` (${formatGoldOption(selectedGoldOption)})`;
             }
             return formatted;
@@ -400,7 +440,25 @@ const ProductDetailScreen = () => {
                 </TouchableOpacity>
                 {showMetalDetails && (
                     <View style={styles.collapsibleContent}>
-                        {metals.length > 1 ? (
+                        {isConfigurator && metalBreakdown.length > 0 ? (
+                            metalBreakdown.map((m, idx) => (
+                                <View key={idx}>
+                                    {idx > 0 && <View style={styles.metalDivider} />}
+                                    <DetailRow
+                                        label="Type"
+                                        value={formatMetalType(m.type, m.purity)}
+                                    />
+                                    <DetailRow
+                                        label="Weight"
+                                        value={m.netWeight ? `${m.netWeight} gram` : '-'}
+                                    />
+                                    <DetailRow
+                                        label="Rate"
+                                        value={m.ratePerGram ? `₹ ${Number(m.ratePerGram).toLocaleString('en-IN')}/g` : '-'}
+                                    />
+                                </View>
+                            ))
+                        ) : metals.length > 1 ? (
                             metals.map((m, idx) => (
                                 <View key={idx}>
                                     {idx > 0 && <View style={styles.metalDivider} />}
@@ -530,8 +588,9 @@ const ProductDetailScreen = () => {
 
     function puritySelector() {
         const cfg = product?.configurator;
-        const purities = cfg?.metalOptions?.[0]?.availablePurities || [];
-        if (!cfg?.enabled || purities.length === 0) return null;
+        if (!cfg?.enabled || !cfg.configurableMetal) return null;
+        const variants = cfg.configurableMetal.variants || [];
+        if (variants.length === 0) return null;
 
         return (
             <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding }}>
@@ -539,21 +598,21 @@ const ProductDetailScreen = () => {
                     Metal Purity
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                    {purities.map((p) => (
+                    {variants.map((v) => (
                         <TouchableOpacity
-                            key={p}
+                            key={v.purity}
                             activeOpacity={0.8}
-                            onPress={() => setSelectedPurity(p)}
+                            onPress={() => setSelectedPurity(v.purity)}
                             style={[
                                 styles.pillChip,
-                                selectedPurity === p && styles.pillChipSelected
+                                selectedPurity === v.purity && styles.pillChipSelected
                             ]}
                         >
                             <Text style={[
                                 styles.pillChipText,
-                                selectedPurity === p && styles.pillChipTextSelected
+                                selectedPurity === v.purity && styles.pillChipTextSelected
                             ]}>
-                                {p}
+                                {v.purity}
                             </Text>
                         </TouchableOpacity>
                     ))}
@@ -564,8 +623,10 @@ const ProductDetailScreen = () => {
 
     function diamondQualitySelector() {
         const cfg = product?.configurator;
-        const qualities = cfg?.diamondOptions?.availableQualities || [];
-        if (!cfg?.enabled || !product?.diamond?.hasDiamond || qualities.length === 0) return null;
+        if (!cfg?.enabled || !product?.diamond?.hasDiamond) return null;
+        const variant = getCurrentVariant();
+        const qualities = variant?.availableDiamondQualities || [];
+        if (qualities.length <= 1) return null;
         const formatQuality = (q) => String(q || '').replace('_', '-');
 
         return (
@@ -598,9 +659,14 @@ const ProductDetailScreen = () => {
     }
 
     function goldOptionsInfo() {
-        const goldOptions = product?.configurator?.enabled
-            ? (product?.configurator?.metalOptions?.[0]?.availableColors || [])
-            : (product?.goldOptions || product?.metals?.[0]?.goldOptions || []);
+        const cfg = product?.configurator;
+        let goldOptions;
+        if (cfg?.enabled && cfg.configurableMetal) {
+            const variant = getCurrentVariant();
+            goldOptions = variant?.availableColors || [];
+        } else {
+            goldOptions = product?.goldOptions || product?.metals?.[0]?.goldOptions || [];
+        }
         if (goldOptions.length === 0) return null;
 
         return (
@@ -639,8 +705,36 @@ const ProductDetailScreen = () => {
     }
 
     function productSizeInfo() {
-        const sizes = product?.sizes || [];
-        if (!sizes.length) return null;
+        const cfg = product?.configurator;
+        let sizes;
+        let weightNote = null;
+
+        if (cfg?.enabled && cfg.configurableMetal) {
+            const variant = getCurrentVariant();
+            const variantSizes = variant?.sizes || [];
+            sizes = variantSizes.map(s => s.size);
+            if (selectedSize && variantSizes.length > 0) {
+                const sizeEntry = variantSizes.find(s => s.size === selectedSize);
+                if (sizeEntry) {
+                    weightNote = `Gold weight: ${sizeEntry.netWeight}g for size ${selectedSize}`;
+                }
+            }
+        } else {
+            const sw = product?.sizeWeights || [];
+            if (sw.length > 0) {
+                sizes = sw.map(s => s.size);
+                if (selectedSize) {
+                    const sizeEntry = sw.find(s => s.size === selectedSize);
+                    if (sizeEntry && sizeEntry.netWeight) {
+                        weightNote = `Weight: ${sizeEntry.netWeight}g for size ${selectedSize}`;
+                    }
+                }
+            } else {
+                sizes = product?.sizes || [];
+            }
+        }
+
+        if (!sizes || !sizes.length) return null;
         const renderItem = ({ item }) => (
             <TouchableOpacity
                 activeOpacity={0.8}
@@ -661,15 +755,15 @@ const ProductDetailScreen = () => {
                 </Text>
                 <FlatList
                     data={sizes}
-                    keyExtrator={(item, index) => { `${item}${index}` }}
+                    keyExtractor={(item, index) => `${item}${index}`}
                     renderItem={renderItem}
                     horizontal
                     contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding + 3.0 }}
                     showsHorizontalScrollIndicator={false}
                 />
-                {product?.configurator?.enabled && product?.configurator?.metalOptions?.[0]?.baseNetWeight && product?.configurator?.defaultSize && (
+                {weightNote && (
                     <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, marginTop: Sizes.fixPadding - 5, ...Fonts.grayColor14Regular }}>
-                        Gold weight: {product.configurator.metalOptions[0].baseNetWeight}g for size {product.configurator.defaultSize}
+                        {weightNote}
                     </Text>
                 )}
             </View>
@@ -748,8 +842,8 @@ const ProductDetailScreen = () => {
                 action: 'add',
                 productId,
                 size: selectedSize || null,
-                goldOption: selectedGoldOption || null,
                 selectedPurity: selectedPurity || null,
+                selectedColor: selectedGoldOption || null,
                 selectedDiamondQuality: selectedDiamondQuality || null,
                 quantity: 1,
             });

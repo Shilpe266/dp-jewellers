@@ -182,13 +182,15 @@ const CartScreen = () => {
         )
     }
 
-    async function updateQty({ productId, size, quantity }) {
+    async function updateQty({ productId, size, selectedPurity, selectedDiamondQuality, quantity }) {
         try {
             const updateCart = httpsCallable(functions, 'updateCart');
             await updateCart({
                 action: 'update',
                 productId,
                 size: size || null,
+                selectedPurity: selectedPurity || null,
+                selectedDiamondQuality: selectedDiamondQuality || null,
                 quantity,
             });
             await fetchCart();
@@ -197,13 +199,15 @@ const CartScreen = () => {
         }
     }
 
-    async function removeItem({ productId, size }) {
+    async function removeItem({ productId, size, selectedPurity, selectedDiamondQuality }) {
         try {
             const updateCart = httpsCallable(functions, 'updateCart');
             await updateCart({
                 action: 'remove',
                 productId,
                 size: size || null,
+                selectedPurity: selectedPurity || null,
+                selectedDiamondQuality: selectedDiamondQuality || null,
             });
             await fetchCart();
         } catch (err) {
@@ -212,6 +216,18 @@ const CartScreen = () => {
     }
 
     function cartItemsInfo() {
+        const formatVariantInfo = (item) => {
+            const parts = [];
+            if (item.size) parts.push(`Size: ${item.size}`);
+            if (item.selectedPurity) parts.push(item.selectedPurity);
+            if (item.selectedColor) {
+                const colorMap = { yellow_gold: 'Yellow', white_gold: 'White', rose_gold: 'Rose' };
+                parts.push(colorMap[item.selectedColor] || item.selectedColor);
+            }
+            if (item.selectedDiamondQuality) parts.push(String(item.selectedDiamondQuality).replace('_', '-'));
+            return parts.length > 0 ? parts.join(' • ') : 'N/A';
+        };
+
         const renderItem = ({ item }) => (
             <View style={styles.cartItemWrapStyle}>
                 <View style={{ flexDirection: 'row', flex: 1, }}>
@@ -231,7 +247,7 @@ const CartScreen = () => {
                             </Text>
                         </View>
                         <Text style={{ ...Fonts.grayColor14Regular, marginTop: -2.0 }}>
-                            Size: {item.size || 'N/A'}
+                            {formatVariantInfo(item)}
                         </Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: Sizes.fixPadding - 4.0 }}>
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', }}>
@@ -242,6 +258,8 @@ const CartScreen = () => {
                                             updateQty({
                                                 productId: item.productId,
                                                 size: item.size,
+                                                selectedPurity: item.selectedPurity,
+                                                selectedDiamondQuality: item.selectedDiamondQuality,
                                                 quantity: item.quantity - 1
                                             })
                                         }
@@ -259,6 +277,8 @@ const CartScreen = () => {
                                         updateQty({
                                             productId: item.productId,
                                             size: item.size,
+                                            selectedPurity: item.selectedPurity,
+                                            selectedDiamondQuality: item.selectedDiamondQuality,
                                             quantity: (item.quantity || 0) + 1
                                         })
                                     }}
@@ -271,7 +291,7 @@ const CartScreen = () => {
                                 name="trash-2"
                                 size={18}
                                 color={Colors.blackColor}
-                                onPress={() => { removeItem({ productId: item.productId, size: item.size }) }}
+                                onPress={() => { removeItem({ productId: item.productId, size: item.size, selectedPurity: item.selectedPurity, selectedDiamondQuality: item.selectedDiamondQuality }) }}
                             />
                         </View>
                     </View>
@@ -282,7 +302,7 @@ const CartScreen = () => {
             <View style={{ marginTop: Sizes.fixPadding * 2.0, }}>
                 <FlatList
                     data={cart}
-                    keyExtractor={(item) => `${item.productId}-${item.size || 'na'}`}
+                    keyExtractor={(item) => `${item.productId}-${item.size || 'na'}-${item.selectedPurity || ''}-${item.selectedDiamondQuality || ''}`}
                     renderItem={renderItem}
                     scrollEnabled={false}
                 />

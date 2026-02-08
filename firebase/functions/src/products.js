@@ -201,6 +201,9 @@ exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
     const taxSettings = taxDoc.exists ? taxDoc.data() : { gst: { jewelry: 3 } };
     const makingChargesConfig = makingChargesDoc.exists ? makingChargesDoc.data() : {};
     updateData.priceRange = _computePriceRange(mergedForRange, rates, taxSettings, makingChargesConfig);
+  } else if (updateData.configurator && !updateData.configurator.enabled) {
+    // Configurator was disabled - clear priceRange
+    updateData.priceRange = admin.firestore.FieldValue.delete();
   }
 
   updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();

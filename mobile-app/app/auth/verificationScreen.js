@@ -134,6 +134,12 @@ const VerificationScreen = () => {
                     onTextChange={text => {
                         setotpInput(text)
                     }}
+                    textInputProps={{
+                        textContentType: 'oneTimeCode',
+                        autoComplete: 'sms-otp',
+                        importantForAutofill: 'yes',
+                        keyboardType: 'number-pad',
+                    }}
                     theme={{
                         inputsContainerStyle: { justifyContent: 'space-between', width: '100%' },
                         pinCodeContainerStyle: { ...styles.textFieldStyle },

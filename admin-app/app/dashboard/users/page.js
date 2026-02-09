@@ -157,14 +157,15 @@ export default function UsersPage() {
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const formatDate = (timestamp) => {
+    if (!timestamp || !timestamp._seconds) return '';
+  
+    const date = new Date(
+      timestamp._seconds * 1000 + timestamp._nanoseconds / 1e6
+    );
+  
+    return date.toLocaleDateString();
+  };  
 
   return (
     <div>

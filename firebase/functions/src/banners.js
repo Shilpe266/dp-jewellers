@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { requiresApproval } = require("./approvalUtils");
 
 const db = admin.firestore();
 const BANNERS = "banners";
@@ -64,7 +65,7 @@ exports.listBanners = onCall({ region: "asia-south1" }, async (request) => {
  * Create or update a banner
  */
 exports.saveBanner = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyAdminWithPermission(request.auth);
+  const callerData = await verifyAdminWithPermission(request.auth);
 
   const { bannerId, title, imageUrl, linkType, linkTarget, displayOrder, isActive } = request.data;
 
@@ -103,6 +104,46 @@ exports.saveBanner = onCall({ region: "asia-south1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
+  if (requiresApproval(callerData)) {
+    const isUpdate = !!bannerId;
+    let previousState = null;
+    if (isUpdate) {
+      const existingBanner = await db.collection(BANNERS).doc(bannerId).get();
+      if (!existingBanner.exists) {
+        throw new HttpsError("not-found", "Banner not found.");
+      }
+      previousState = existingBanner.data();
+    }
+
+    // Store serializable banner data (no server timestamps)
+    const serializableBannerData = { ...bannerData };
+    delete serializableBannerData.updatedAt;
+    serializableBannerData.createdBy = request.auth.uid;
+
+    await db.collection("pendingApprovals").add({
+      entityType: "banner",
+      actionType: isUpdate ? "update" : "create",
+      entityId: isUpdate ? bannerId : null,
+      entityName: title,
+      proposedChanges: serializableBannerData,
+      previousState,
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: callerData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    return {
+      message: isUpdate
+        ? "Banner update submitted for approval."
+        : "New banner submitted for approval.",
+      pendingApproval: true,
+    };
+  }
+
   if (bannerId) {
     // Update existing banner
     const bannerDoc = await db.collection(BANNERS).doc(bannerId).get();
@@ -124,7 +165,7 @@ exports.saveBanner = onCall({ region: "asia-south1" }, async (request) => {
  * Delete a banner
  */
 exports.deleteBanner = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyAdminWithPermission(request.auth);
+  const callerData = await verifyAdminWithPermission(request.auth);
 
   const { bannerId } = request.data;
 
@@ -135,6 +176,26 @@ exports.deleteBanner = onCall({ region: "asia-south1" }, async (request) => {
   const bannerDoc = await db.collection(BANNERS).doc(bannerId).get();
   if (!bannerDoc.exists) {
     throw new HttpsError("not-found", "Banner not found.");
+  }
+
+  if (requiresApproval(callerData)) {
+    await db.collection("pendingApprovals").add({
+      entityType: "banner",
+      actionType: "delete",
+      entityId: bannerId,
+      entityName: bannerDoc.data().title || bannerId,
+      proposedChanges: { deleted: true },
+      previousState: bannerDoc.data(),
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: callerData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    return { message: "Banner deletion submitted for approval.", pendingApproval: true };
   }
 
   await db.collection(BANNERS).doc(bannerId).delete();

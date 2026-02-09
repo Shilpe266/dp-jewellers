@@ -63,6 +63,14 @@ exports.deleteUser = users.deleteUser;
 exports.getDashboardStats = users.getDashboardStats;
 
 // ============================================
+// APPROVAL FUNCTIONS
+// ============================================
+const approvals = require("./src/approvals");
+exports.listPendingApprovals = approvals.listPendingApprovals;
+exports.reviewApproval = approvals.reviewApproval;
+exports.getPendingApprovalCount = approvals.getPendingApprovalCount;
+
+// ============================================
 // IMAGE FUNCTIONS
 // ============================================
 exports.onImageUpload = images.onImageUpload;

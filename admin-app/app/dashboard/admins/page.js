@@ -21,6 +21,7 @@ import {
   Checkbox,
   FormGroup,
   Tooltip,
+  Divider,
 } from '@mui/material';
 import { DataGrid, GridToolbar } from '@mui/x-data-grid';
 import { Edit, Block, CheckCircle, PersonAdd } from '@mui/icons-material';
@@ -90,6 +91,7 @@ export default function AdminsPage() {
       managePromotions: false,
       manageUsers: false,
     },
+    skipApproval: false,
   });
 
   useEffect(() => {
@@ -147,6 +149,7 @@ export default function AdminsPage() {
         managePromotions: admin.permissions?.managePromotions || false,
         manageUsers: admin.permissions?.manageUsers || false,
       },
+      skipApproval: admin.skipApproval || false,
     });
     setOpenEditDialog(true);
   };
@@ -164,6 +167,7 @@ export default function AdminsPage() {
         uid: selectedAdmin.uid,
         role: editForm.role,
         permissions: editForm.permissions,
+        skipApproval: editForm.skipApproval,
       });
       setSuccess('Admin updated successfully!');
       setOpenEditDialog(false);
@@ -319,9 +323,14 @@ export default function AdminsPage() {
               sortable: false,
               valueGetter: (value, row) => row.role === 'super_admin' ? 'All permissions' : formatPermissions(row.permissions),
               renderCell: (params) => (
-                <Typography variant="body2" noWrap>
-                  {params.row.role === 'super_admin' ? 'All permissions' : formatPermissions(params.row.permissions)}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="body2" noWrap>
+                    {params.row.role === 'super_admin' ? 'All permissions' : formatPermissions(params.row.permissions)}
+                  </Typography>
+                  {params.row.skipApproval && params.row.role !== 'super_admin' && (
+                    <Chip label="Auto-approve" size="small" color="warning" variant="outlined" />
+                  )}
+                </Box>
               ),
             },
             {
@@ -460,8 +469,10 @@ export default function AdminsPage() {
                   <Box component="ul" sx={{ pl: 2, m: 0 }}>
                     <li><Typography variant="body2">Manage Products (add, edit, delete, archive, restore)</Typography></li>
                     <li><Typography variant="body2">Manage Orders (view, update status)</Typography></li>
-                    <li><Typography variant="body2">Manage Promotions</Typography></li>
-                    <li><Typography variant="body2" sx={{ color: '#d32f2f' }}>Cannot manage metal rates</Typography></li>
+                    <li><Typography variant="body2">Manage Promotions (banners)</Typography></li>
+                    <li><Typography variant="body2">Manage Metal Rates</Typography></li>
+                    <li><Typography variant="body2">Manage Users</Typography></li>
+                    <li><Typography variant="body2" sx={{ color: '#ed6c02' }}>Changes require super admin approval (by default)</Typography></li>
                     <li><Typography variant="body2" sx={{ color: '#d32f2f' }}>Cannot manage other admin users</Typography></li>
                   </Box>
                 ) : (
@@ -475,7 +486,7 @@ export default function AdminsPage() {
                   </Box>
                 )}
                 <Typography variant="caption" sx={{ color: '#666', mt: 1, display: 'block' }}>
-                  Note: Only Super Admins (created during deployment) have full access including rate management and admin user management.
+                  Note: Admin changes to products, rates, and banners require super admin approval unless explicitly allowed.
                 </Typography>
               </Box>
             </Grid>
@@ -558,6 +569,29 @@ export default function AdminsPage() {
                   />
                 ))}
               </FormGroup>
+            </Grid>
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle2" sx={{ color: '#1E1B4B', fontWeight: 'bold', mb: 1 }}>
+                Approval Settings
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={editForm.skipApproval || false}
+                    onChange={() => setEditForm((prev) => ({ ...prev, skipApproval: !prev.skipApproval }))}
+                    disabled={actionLoading}
+                    sx={{
+                      color: '#1E1B4B',
+                      '&.Mui-checked': { color: '#1E1B4B' },
+                    }}
+                  />
+                }
+                label="Allow changes without approval"
+              />
+              <Typography variant="caption" sx={{ color: '#666', display: 'block', ml: 4 }}>
+                When enabled, this admin&apos;s product, pricing, and banner changes take effect immediately without super admin approval.
+              </Typography>
             </Grid>
           </Grid>
         </DialogContent>

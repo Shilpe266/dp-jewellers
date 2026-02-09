@@ -150,7 +150,7 @@ export default function BannersPage() {
       const imageUrl = await uploadImage();
 
       const saveBanner = httpsCallable(functions, 'saveBanner');
-      await saveBanner({
+      const result = await saveBanner({
         bannerId: editingBanner || undefined,
         title: formData.title,
         imageUrl,
@@ -160,7 +160,11 @@ export default function BannersPage() {
         isActive: formData.isActive,
       });
 
-      setSuccess(editingBanner ? 'Banner updated successfully!' : 'Banner created successfully!');
+      if (result.data.pendingApproval) {
+        setSuccess(editingBanner ? 'Banner update submitted for approval.' : 'New banner submitted for approval. It will appear once approved.');
+      } else {
+        setSuccess(editingBanner ? 'Banner updated successfully!' : 'Banner created successfully!');
+      }
       handleCloseDialog();
       fetchBanners();
     } catch (err) {
@@ -176,8 +180,12 @@ export default function BannersPage() {
 
     try {
       const deleteBanner = httpsCallable(functions, 'deleteBanner');
-      await deleteBanner({ bannerId });
-      setSuccess('Banner deleted successfully!');
+      const result = await deleteBanner({ bannerId });
+      if (result.data.pendingApproval) {
+        setSuccess('Banner deletion submitted for approval.');
+      } else {
+        setSuccess('Banner deleted successfully!');
+      }
       fetchBanners();
     } catch (err) {
       console.error('Error deleting banner:', err);

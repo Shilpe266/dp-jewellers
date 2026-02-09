@@ -91,7 +91,7 @@ export default function PricingPage() {
 
     try {
       const updateMetalRates = httpsCallable(functions, 'updateMetalRates');
-      await updateMetalRates({
+      const result = await updateMetalRates({
         gold: {
           '24K': Number(metalRates.gold24K) || 0,
           '22K': Number(metalRates.gold22K) || 0,
@@ -114,8 +114,12 @@ export default function PricingPage() {
           IF_DEF: Number(metalRates.diamondIF_DEF) || 0,
         },
       });
-      setLastRateUpdate(new Date());
-      setSuccess('Metal rates updated! All product prices will be recalculated automatically.');
+      if (result.data.pendingApproval) {
+        setSuccess('Rate changes submitted for super admin approval. Current rates remain unchanged until approved.');
+      } else {
+        setLastRateUpdate(new Date());
+        setSuccess('Metal rates updated! All product prices will be recalculated automatically.');
+      }
     } catch (err) {
       setError('Failed to update metal rates: ' + (err.message || ''));
       console.error(err);

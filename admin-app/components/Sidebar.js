@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -13,6 +14,7 @@ import {
   Typography,
   Divider,
   Box,
+  Badge,
 } from '@mui/material';
 import {
   Dashboard,
@@ -25,18 +27,23 @@ import {
   Support,
   Store,
   ViewCarousel,
+  PendingActions,
 } from '@mui/icons-material';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import app, { auth } from '@/lib/firebase';
+
+const functions = getFunctions(app, 'asia-south1');
 
 const drawerWidth = 260;
 
 const menuItems = [
   { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard', roles: ['super_admin', 'admin', 'editor'] },
-  { text: 'Pricing', icon: <AttachMoney />, path: '/dashboard/pricing', roles: ['super_admin'], permission: 'manageRates' },
+  { text: 'Pricing', icon: <AttachMoney />, path: '/dashboard/pricing', roles: ['super_admin', 'admin'], permission: 'manageRates' },
   { text: 'Products', icon: <Inventory />, path: '/dashboard/products', roles: ['super_admin', 'admin', 'editor'], permission: 'manageProducts' },
   { text: 'Orders', icon: <ShoppingCart />, path: '/dashboard/orders', roles: ['super_admin', 'admin'], permission: 'manageOrders' },
   { text: 'Banners', icon: <ViewCarousel />, path: '/dashboard/banners', roles: ['super_admin', 'admin'], permission: 'managePromotions' },
+  { text: 'Approvals', icon: <PendingActions />, path: '/dashboard/approvals', roles: ['super_admin'] },
   { text: 'Stores', icon: <Store />, path: '/dashboard/stores', roles: ['super_admin'] },
   { text: 'Users', icon: <People />, path: '/dashboard/users', roles: ['super_admin'], permission: 'manageUsers' },
   { text: 'Manage Admins', icon: <AdminPanelSettings />, path: '/dashboard/admins', roles: ['super_admin'] },
@@ -46,6 +53,24 @@ const menuItems = [
 export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (adminData?.role === 'super_admin') {
+      const fetchCount = async () => {
+        try {
+          const fn = httpsCallable(functions, 'getPendingApprovalCount');
+          const result = await fn();
+          setPendingCount(result.data.count || 0);
+        } catch (err) {
+          console.error('Error fetching pending approval count:', err);
+        }
+      };
+      fetchCount();
+      const interval = setInterval(fetchCount, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [adminData]);
 
   const handleLogout = async () => {
     try {
@@ -82,6 +107,17 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
 
   const visibleMenuItems = getVisibleMenuItems();
 
+  const renderIcon = (item) => {
+    if (item.text === 'Approvals' && pendingCount > 0) {
+      return (
+        <Badge badgeContent={pendingCount} color="error" max={99}>
+          {item.icon}
+        </Badge>
+      );
+    }
+    return item.icon;
+  };
+
   const drawer = (
     <div className="h-full flex flex-col" style={{ backgroundColor: '#1E1B4B' }}>
       <div className="p-6">
@@ -96,7 +132,7 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
             />
           </div>
         </div>
-      
+
         <Typography
           variant="caption"
           className="text-gray-300 text-center block mt-1"
@@ -137,7 +173,7 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
                 }}
               >
                 <ListItemIcon sx={{ color: 'white', minWidth: 40 }}>
-                  {item.icon}
+                  {renderIcon(item)}
                 </ListItemIcon>
                 <ListItemText primary={item.text} />
               </ListItemButton>

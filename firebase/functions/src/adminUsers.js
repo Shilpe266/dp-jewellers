@@ -69,13 +69,14 @@ exports.createAdmin = onCall({ region: "asia-south1" }, async (request) => {
     permissions: permissions || {
       manageProducts: role === "super_admin" || role === "admin",
       manageOrders: role === "super_admin" || role === "admin",
-      manageRates: role === "super_admin",
+      manageRates: role === "super_admin" || role === "admin",
       managePromotions: role === "super_admin" || role === "admin",
-      manageUsers: role === "super_admin",
+      manageUsers: role === "super_admin" || role === "admin",
     },
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     createdBy: request.auth.uid,
     isActive: true,
+    skipApproval: false,
   };
 
   await db.collection("admins").doc(userRecord.uid).set(adminData);
@@ -196,7 +197,7 @@ exports.updateAdmin = onCall({ region: "asia-south1" }, async (request) => {
     throw new HttpsError("permission-denied", "Only super admins can update admin accounts.");
   }
 
-  const { uid, role, permissions } = request.data;
+  const { uid, role, permissions, skipApproval } = request.data;
 
   if (!uid) {
     throw new HttpsError("invalid-argument", "Admin uid is required.");
@@ -228,6 +229,10 @@ exports.updateAdmin = onCall({ region: "asia-south1" }, async (request) => {
 
   if (permissions) {
     updateData.permissions = permissions;
+  }
+
+  if (typeof skipApproval === "boolean") {
+    updateData.skipApproval = skipApproval;
   }
 
   await db.collection("admins").doc(uid).update(updateData);

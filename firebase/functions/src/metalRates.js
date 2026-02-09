@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { requiresApproval } = require("./approvalUtils");
 
 const db = admin.firestore();
 
@@ -24,7 +25,7 @@ async function verifyRatesAdmin(auth) {
  * Also saves previous rates to priceHistory collection
  */
 exports.updateMetalRates = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyRatesAdmin(request.auth);
+  const adminData = await verifyRatesAdmin(request.auth);
 
   const { gold, silver, diamond, platinum } = request.data;
 
@@ -92,6 +93,36 @@ exports.updateMetalRates = onCall({ region: "asia-south1" }, async (request) => 
       throw new HttpsError("invalid-argument", "Invalid platinum rate: must be a positive number.");
     }
     updateData.platinum = platinum;
+  }
+
+  if (requiresApproval(adminData)) {
+    // Store proposed rates in pendingApprovals only — current rates unchanged
+    await db.collection("pendingApprovals").add({
+      entityType: "metalRates",
+      actionType: "update",
+      entityId: "current",
+      entityName: "Metal Rates Update",
+      proposedChanges: updateData,
+      previousState: currentRates.exists ? currentRates.data() : null,
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: adminData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    return {
+      message: "Rate changes submitted for approval. Current rates remain unchanged until approved.",
+      pendingApproval: true,
+      updatedCategories: [
+        gold ? "gold" : null,
+        silver ? "silver" : null,
+        diamond ? "diamond" : null,
+        platinum ? "platinum" : null,
+      ].filter(Boolean),
+    };
   }
 
   // Use set with merge to handle first-time creation

@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { _computePriceRange } = require("./priceCalculation");
+const { requiresApproval } = require("./approvalUtils");
 
 const db = admin.firestore();
 const PRODUCTS = "products";
@@ -61,7 +62,7 @@ exports.generateProductCode = onCall({ region: "asia-south1" }, async (request) 
  * Create a new product
  */
 exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyProductAdmin(request.auth);
+  const adminData = await verifyProductAdmin(request.auth);
 
   const data = request.data;
 
@@ -151,6 +152,39 @@ exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
     product.priceRange = _computePriceRange(product, rates, taxSettings, makingChargesConfig);
   }
 
+  if (requiresApproval(adminData)) {
+    // Create product in pending state (not visible to customers)
+    const originalStatus = product.status;
+    product.isActive = false;
+    product.status = "pending_approval";
+    product.approvalStatus = "pending_approval";
+
+    const docRef = await db.collection(PRODUCTS).add(product);
+
+    // Create the pending approval entry
+    await db.collection("pendingApprovals").add({
+      entityType: "product",
+      actionType: "create",
+      entityId: docRef.id,
+      entityName: product.name,
+      proposedChanges: { originalStatus: originalStatus || "active" },
+      previousState: null,
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: adminData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    return {
+      productId: docRef.id,
+      message: "Product created and submitted for approval. It will be visible once approved.",
+      pendingApproval: true,
+    };
+  }
+
   const docRef = await db.collection(PRODUCTS).add(product);
 
   return { productId: docRef.id, message: "Product created successfully." };
@@ -160,7 +194,7 @@ exports.createProduct = onCall({ region: "asia-south1" }, async (request) => {
  * Update an existing product
  */
 exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyProductAdmin(request.auth);
+  const adminData = await verifyProductAdmin(request.auth);
 
   const { productId, ...updateData } = request.data;
 
@@ -206,6 +240,37 @@ exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
     updateData.priceRange = admin.firestore.FieldValue.delete();
   }
 
+  if (requiresApproval(adminData)) {
+    // Store changes in pendingApprovals only — live product unchanged
+    await db.collection("pendingApprovals").add({
+      entityType: "product",
+      actionType: "update",
+      entityId: productId,
+      entityName: existingData.name || productId,
+      proposedChanges: updateData,
+      previousState: existingData,
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: adminData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    // Mark the live product as having a pending change
+    await productRef.update({
+      approvalStatus: "pending_update",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      productId,
+      message: "Changes submitted for approval. The live product is unchanged until approved.",
+      pendingApproval: true,
+    };
+  }
+
   updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
   await productRef.update(updateData);
@@ -217,7 +282,7 @@ exports.updateProduct = onCall({ region: "asia-south1" }, async (request) => {
  * Archive a product (soft delete)
  */
 exports.deleteProduct = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyProductAdmin(request.auth);
+  const adminData = await verifyProductAdmin(request.auth);
 
   const { productId } = request.data;
   if (!productId) {
@@ -229,6 +294,30 @@ exports.deleteProduct = onCall({ region: "asia-south1" }, async (request) => {
 
   if (!productDoc.exists) {
     throw new HttpsError("not-found", "Product not found.");
+  }
+
+  if (requiresApproval(adminData)) {
+    await db.collection("pendingApprovals").add({
+      entityType: "product",
+      actionType: "archive",
+      entityId: productId,
+      entityName: productDoc.data().name || productId,
+      proposedChanges: { status: "archived", isActive: false },
+      previousState: { status: productDoc.data().status, isActive: productDoc.data().isActive },
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: adminData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    return {
+      productId,
+      message: "Archive request submitted for approval.",
+      pendingApproval: true,
+    };
   }
 
   await productRef.update({
@@ -244,7 +333,7 @@ exports.deleteProduct = onCall({ region: "asia-south1" }, async (request) => {
  * Restore an archived product
  */
 exports.restoreProduct = onCall({ region: "asia-south1" }, async (request) => {
-  await verifyProductAdmin(request.auth);
+  const adminData = await verifyProductAdmin(request.auth);
 
   const { productId } = request.data;
   if (!productId) {
@@ -256,6 +345,30 @@ exports.restoreProduct = onCall({ region: "asia-south1" }, async (request) => {
 
   if (!productDoc.exists) {
     throw new HttpsError("not-found", "Product not found.");
+  }
+
+  if (requiresApproval(adminData)) {
+    await db.collection("pendingApprovals").add({
+      entityType: "product",
+      actionType: "restore",
+      entityId: productId,
+      entityName: productDoc.data().name || productId,
+      proposedChanges: { status: "active", isActive: true },
+      previousState: { status: productDoc.data().status, isActive: productDoc.data().isActive },
+      status: "pending",
+      submittedBy: request.auth.uid,
+      submittedByEmail: adminData.email,
+      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
+    });
+
+    return {
+      productId,
+      message: "Restore request submitted for approval.",
+      pendingApproval: true,
+    };
   }
 
   await productRef.update({

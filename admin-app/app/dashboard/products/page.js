@@ -880,12 +880,20 @@ export default function ProductsPage() {
 
       if (editingProduct) {
         const updateProduct = httpsCallable(functions, 'updateProduct');
-        await updateProduct({ productId: editingProduct, ...productData });
-        setSuccess('Product updated successfully!');
+        const result = await updateProduct({ productId: editingProduct, ...productData });
+        if (result.data.pendingApproval) {
+          setSuccess('Changes submitted for super admin approval. The live product is unchanged.');
+        } else {
+          setSuccess('Product updated successfully!');
+        }
       } else {
         const createProduct = httpsCallable(functions, 'createProduct');
-        await createProduct(productData);
-        setSuccess('Product created successfully!');
+        const result = await createProduct(productData);
+        if (result.data.pendingApproval) {
+          setSuccess('Product created and submitted for approval. It will be visible to customers once approved.');
+        } else {
+          setSuccess('Product created successfully!');
+        }
       }
 
       handleCloseDialog();
@@ -916,8 +924,12 @@ export default function ProductsPage() {
     if (!confirm('Are you sure you want to archive this product?')) return;
     try {
       const deleteProduct = httpsCallable(functions, 'deleteProduct');
-      await deleteProduct({ productId });
-      setSuccess('Product archived successfully!');
+      const result = await deleteProduct({ productId });
+      if (result.data.pendingApproval) {
+        setSuccess('Archive request submitted for approval.');
+      } else {
+        setSuccess('Product archived successfully!');
+      }
       fetchProducts();
     } catch (err) {
       console.error('Error archiving product:', err);
@@ -928,8 +940,12 @@ export default function ProductsPage() {
   const handleRestore = async (productId) => {
     try {
       const restoreProduct = httpsCallable(functions, 'restoreProduct');
-      await restoreProduct({ productId });
-      setSuccess('Product restored successfully!');
+      const result = await restoreProduct({ productId });
+      if (result.data.pendingApproval) {
+        setSuccess('Restore request submitted for approval.');
+      } else {
+        setSuccess('Product restored successfully!');
+      }
       fetchProducts();
     } catch (err) {
       console.error('Error restoring product:', err);
@@ -944,6 +960,7 @@ export default function ProductsPage() {
       case 'out_of_stock': return 'warning';
       case 'coming_soon': return 'info';
       case 'archived': return 'error';
+      case 'pending_approval': return 'warning';
       default: return 'default';
     }
   };
@@ -955,6 +972,7 @@ export default function ProductsPage() {
       case 'out_of_stock': return 'Out of Stock';
       case 'coming_soon': return 'Coming Soon';
       case 'archived': return 'Archived';
+      case 'pending_approval': return 'Pending Approval';
       default: return status || 'Unknown';
     }
   };

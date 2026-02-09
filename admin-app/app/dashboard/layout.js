@@ -14,10 +14,11 @@ const drawerWidth = 260;
 // Define route permissions
 const routePermissions = {
   '/dashboard': { roles: ['super_admin', 'admin', 'editor'] },
-  '/dashboard/pricing': { roles: ['super_admin'], permission: 'manageRates' },
+  '/dashboard/pricing': { roles: ['super_admin', 'admin'], permission: 'manageRates' },
   '/dashboard/products': { roles: ['super_admin', 'admin', 'editor'], permission: 'manageProducts' },
   '/dashboard/orders': { roles: ['super_admin', 'admin'], permission: 'manageOrders' },
   '/dashboard/banners': { roles: ['super_admin', 'admin'], permission: 'managePromotions' },
+  '/dashboard/approvals': { roles: ['super_admin'] },
   '/dashboard/stores': { roles: ['super_admin'] },
   '/dashboard/users': { roles: ['super_admin'], permission: 'manageUsers' },
   '/dashboard/admins': { roles: ['super_admin'] },

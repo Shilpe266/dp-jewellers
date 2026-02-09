@@ -221,5 +221,17 @@ service cloud.firestore {
       // Only written by Cloud Functions (no client writes)
       allow create, update, delete: if false;
     }
+
+    // ============================================
+    // PENDING APPROVALS COLLECTION
+    // ============================================
+    match /pendingApprovals/{approvalId} {
+      // Super admins can read all; admins can read their own submissions
+      allow read: if isSuperAdmin() ||
+        (isAdmin() && resource.data.submittedBy == request.auth.uid);
+
+      // Only written by Cloud Functions (no client writes)
+      allow create, update, delete: if false;
+    }
   }
 }

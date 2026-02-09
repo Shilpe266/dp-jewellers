@@ -37,8 +37,6 @@ const HomeScreen = () => {
     const [snackText, setSnackText] = useState('');
     const [favoriteIds, setFavoriteIds] = useState([]);
 
-    console.log("categories",bannerData);
-
     useEffect(() => {
         let active = true;
         const fetchHomeData = async () => {

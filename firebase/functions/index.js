@@ -111,3 +111,10 @@ exports.getActiveStores = stores.getActiveStores;
 exports.createStore = stores.createStore;
 exports.updateStore = stores.updateStore;
 exports.deleteStore = stores.deleteStore;
+
+// ============================================
+// SUPPORT / CONTACT DETAILS FUNCTIONS
+// ============================================
+const support = require("./src/support");
+exports.getContactDetails = support.getContactDetails;
+exports.updateContactDetails = support.updateContactDetails;

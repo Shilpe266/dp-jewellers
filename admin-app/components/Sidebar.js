@@ -121,7 +121,7 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
   };
 
   const drawer = (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#1E1B4B' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: '#1E1B4B', minHeight: '100%' }}>
       <div className="p-6">
         <div className="flex justify-center mb-3">
           <div className="bg-white rounded-md px-3 py-2 shadow-sm">
@@ -154,7 +154,7 @@ export default function Sidebar({ mobileOpen, handleDrawerToggle, adminData }) {
 
       <Divider sx={{ borderColor: 'rgba(255, 255, 255, 0.12)' }} />
 
-      <List className="flex-1 px-3 py-4">
+      <List className="flex-1 px-3 py-4" sx={{ overflowY: 'auto', minHeight: 0 }}>
         {visibleMenuItems.map((item) => (
           <ListItem key={item.text} disablePadding className="mb-2">
             <Link href={item.path} className="w-full">

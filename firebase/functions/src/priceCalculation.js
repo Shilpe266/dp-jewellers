@@ -292,7 +292,7 @@ function calculateVariantPriceInternal(product, rates, taxSettings, makingCharge
 
   // Making charges: per-metal > product-level > category > global
   let mcType, mcValue;
-  if (metalPricing.makingChargeValue && metalPricing.makingChargeValue > 0) {
+  if (metalPricing.makingChargeValue != null && metalPricing.makingChargeValue !== "") {
     mcType = metalPricing.makingChargeType || "percentage";
     mcValue = metalPricing.makingChargeValue;
   } else {
@@ -309,7 +309,7 @@ function calculateVariantPriceInternal(product, rates, taxSettings, makingCharge
 
   // Wastage charges: per-metal > product-level > global
   let wcType, wcValue;
-  if (metalPricing.wastageChargeValue && metalPricing.wastageChargeValue > 0) {
+  if (metalPricing.wastageChargeValue != null && metalPricing.wastageChargeValue !== "") {
     wcType = metalPricing.wastageChargeType || "percentage";
     wcValue = metalPricing.wastageChargeValue;
   } else {
@@ -472,7 +472,7 @@ function resolveMakingCharge(product, makingChargesConfig) {
   const category = product.category || "";
 
   // 1. If product has its own making charge set, use it
-  if (pricing.makingChargeValue && pricing.makingChargeValue > 0) {
+  if (pricing.makingChargeValue != null && pricing.makingChargeValue !== "") {
     return {
       mcType: pricing.makingChargeType || "percentage",
       mcValue: pricing.makingChargeValue,
@@ -504,7 +504,7 @@ function resolveWastageCharge(product, makingChargesConfig) {
   const pricing = product.pricing || {};
 
   // 1. If product has its own wastage charge set, use it
-  if (pricing.wastageChargeValue && pricing.wastageChargeValue > 0) {
+  if (pricing.wastageChargeValue != null && pricing.wastageChargeValue !== "") {
     return {
       wcType: pricing.wastageChargeType || "percentage",
       wcValue: pricing.wastageChargeValue,

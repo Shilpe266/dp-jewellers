@@ -233,11 +233,11 @@ const HomeScreen = () => {
         const productsWithFavorites = addFavoriteStatus(recommendedSource);
         return (
             <View style={{ marginTop: Sizes.fixPadding, marginBottom: Sizes.fixPadding / 2.0 }}>
-                <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, alignItems: 'center', marginBottom: Sizes.fixPadding }}>
-                    <Text style={{ ...Fonts.blackColor18SemiBold, fontSize: 19.0, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 2.0 }}>
+                <View style={{ width: '100%', paddingHorizontal: Sizes.fixPadding, alignItems: 'center', marginBottom: Sizes.fixPadding }}>
+                    <Text style={{ ...Fonts.blackColor18SemiBold, fontSize: 19.0, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 2.0, textAlign: 'center' }}>
                         DP SIGNATURE
                     </Text>
-                    <Text style={{ ...Fonts.blackColor14Medium, fontSize: 12.0, lineHeight: 14.0, textAlign: 'center', fontStyle: 'italic', letterSpacing: 0.5, marginBottom: 2.0 }}>
+                    <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...Fonts.blackColor14Medium, fontSize: 12.0, lineHeight: 18.0, textAlign: 'center', fontStyle: 'italic', letterSpacing: 0.2, marginBottom: 5.0, width: '90%' }}>
                         Handpicked designs for your unique glow
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', width: '75%', marginTop: 2.0 }}>

@@ -228,7 +228,7 @@ exports.getCart = onCall({ region: "asia-south1" }, async (request) => {
       if (item.selectedPurity && product.configurator?.enabled && rates) {
         const variantPricing = _calculateVariantPriceInternal(
           product, rates, taxSettings, makingChargesConfig,
-          item.selectedPurity, item.selectedDiamondQuality, item.size
+          item.selectedPurity, item.selectedDiamondQuality, item.size, item.selectedMetalType
         );
         finalPrice = variantPricing.finalPrice;
       }
@@ -236,6 +236,7 @@ exports.getCart = onCall({ region: "asia-south1" }, async (request) => {
       enrichedCart.push({
         productId: item.productId,
         size: item.size,
+        selectedMetalType: item.selectedMetalType || null,
         selectedPurity: item.selectedPurity || null,
         selectedColor: item.selectedColor || null,
         selectedDiamondQuality: item.selectedDiamondQuality || null,
@@ -257,7 +258,7 @@ exports.getCart = onCall({ region: "asia-south1" }, async (request) => {
 exports.updateCart = onCall({ region: "asia-south1" }, async (request) => {
   verifyAuth(request.auth);
 
-  const { action, productId, size, quantity, selectedPurity, selectedColor, selectedDiamondQuality } = request.data;
+  const { action, productId, size, quantity, selectedMetalType, selectedPurity, selectedColor, selectedDiamondQuality } = request.data;
 
   if (!action) {
     throw new HttpsError("invalid-argument", "action is required.");
@@ -285,6 +286,7 @@ exports.updateCart = onCall({ region: "asia-south1" }, async (request) => {
   const matchCartItem = (item) =>
     item.productId === productId &&
     item.size === (size || null) &&
+    (item.selectedMetalType || null) === (selectedMetalType || null) &&
     (item.selectedPurity || null) === (selectedPurity || null) &&
     (item.selectedColor || null) === (selectedColor || null) &&
     (item.selectedDiamondQuality || null) === (selectedDiamondQuality || null);
@@ -309,6 +311,7 @@ exports.updateCart = onCall({ region: "asia-south1" }, async (request) => {
         };
 
         // Store variant selections if provided
+        if (selectedMetalType) cartItem.selectedMetalType = selectedMetalType;
         if (selectedPurity) cartItem.selectedPurity = selectedPurity;
         if (selectedColor) cartItem.selectedColor = selectedColor;
         if (selectedDiamondQuality) cartItem.selectedDiamondQuality = selectedDiamondQuality;
@@ -486,19 +489,42 @@ exports.manageAddress = onCall({ region: "asia-south1" }, async (request) => {
 
   let addresses = userDoc.data().addresses || [];
 
+  const normalizeAddress = (payload = {}) => {
+    const phone = payload.phone || payload.contactNumber || payload.mobileNo || "";
+    const addressLine1 = payload.addressLine1 || payload.completeAddress || payload.address || "";
+    const addressLine2 = payload.addressLine2 || payload.areaName || "";
+
+    return {
+      addressType: payload.addressType || "home",
+      name: payload.name || "",
+      phone,
+      contactNumber: phone,
+      addressLine1,
+      addressLine2,
+      areaName: addressLine2,
+      city: payload.city || "",
+      state: payload.state || "",
+      pincode: payload.pincode || "",
+      completeAddress: addressLine1,
+      isDefault: Boolean(payload.isDefault),
+    };
+  };
+
   switch (action) {
     case "add": {
       if (!address) {
         throw new HttpsError("invalid-argument", "address object is required for add action.");
       }
 
+      const normalized = normalizeAddress(address);
+      const isDefault = addresses.length === 0 || normalized.isDefault;
+      if (isDefault) {
+        addresses = addresses.map((addr) => ({ ...addr, isDefault: false }));
+      }
+
       const newAddress = {
-        addressType: address.addressType || "home",
-        name: address.name || "",
-        contactNumber: address.contactNumber || "",
-        areaName: address.areaName || "",
-        completeAddress: address.completeAddress || "",
-        isDefault: addresses.length === 0, // First address is default
+        ...normalized,
+        isDefault,
         createdAt: new Date().toISOString(),
       };
 
@@ -514,11 +540,14 @@ exports.manageAddress = onCall({ region: "asia-south1" }, async (request) => {
         throw new HttpsError("invalid-argument", "address object is required for update action.");
       }
 
-      addresses[addressIndex] = {
+      const normalized = normalizeAddress(address);
+      const nextAddress = {
         ...addresses[addressIndex],
-        ...address,
+        ...normalized,
         createdAt: addresses[addressIndex].createdAt, // Preserve original createdAt
       };
+      delete nextAddress.isDefault;
+      addresses[addressIndex] = nextAddress;
       break;
     }
 

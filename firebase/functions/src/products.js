@@ -518,7 +518,7 @@ function resolveMakingCharge(product, makingChargesConfig) {
   const category = product.category || "";
 
   // 1. Product-level override
-  if (pricing.makingChargeValue && pricing.makingChargeValue > 0) {
+  if (pricing.makingChargeValue != null && pricing.makingChargeValue !== "") {
     return {
       mcType: pricing.makingChargeType || "percentage",
       mcValue: pricing.makingChargeValue,
@@ -550,7 +550,7 @@ function resolveWastageCharge(product, makingChargesConfig) {
   const pricing = product.pricing || {};
 
   // 1. Product-level override
-  if (pricing.wastageChargeValue && pricing.wastageChargeValue > 0) {
+  if (pricing.wastageChargeValue != null && pricing.wastageChargeValue !== "") {
     return {
       wcType: pricing.wastageChargeType || "percentage",
       wcValue: pricing.wastageChargeValue,

@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View, Image, FlatList, TouchableOpacity, ImageBackground, ActivityIndicator, DeviceEventEmitter } from 'react-native'
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Colors, CommomStyles, Fonts, Sizes, Screen } from '../../../constants/styles'
 import { Feather } from '@expo/vector-icons';
 import { useNavigation, useRouter, useFocusEffect } from 'expo-router';
@@ -37,6 +37,31 @@ const HomeScreen = () => {
     const [showSnackBar, setShowSnackBar] = useState(false);
     const [snackText, setSnackText] = useState('');
     const [favoriteIds, setFavoriteIds] = useState([]);
+
+    const flatListRef = useRef(null);
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const onViewableItemsChanged = useRef(({ viewableItems }) => {
+        if (viewableItems && viewableItems.length > 0) {
+            setCurrentIndex(viewableItems[0].index);
+        }
+    }).current;
+
+    const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+    useEffect(() => {
+        if (!bannerData || bannerData.length === 0) return;
+
+        const interval = setInterval(() => {
+            setCurrentIndex(prev => {
+                const next = (prev + 1) % bannerData.length;
+                flatListRef.current?.scrollToIndex({ index: next, animated: true });
+                return next;
+            });
+        }, 3000);
+
+        return () => clearInterval(interval);
+    }, [bannerData.length]);
 
     useEffect(() => {
         let active = true;
@@ -153,6 +178,7 @@ const HomeScreen = () => {
                             </>
                         }
                         showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{ paddingBottom: 100 }}
                     />
                 )}
             </View>
@@ -206,10 +232,23 @@ const HomeScreen = () => {
         if (!recommendedSource || recommendedSource.length === 0) return null;
         const productsWithFavorites = addFavoriteStatus(recommendedSource);
         return (
-            <View style={{ marginVertical: Sizes.fixPadding * 2.0, }}>
-                <Text style={{ marginHorizontal: Sizes.fixPadding * 2.0, ...Fonts.blackColor18SemiBold }}>
-                    Recommended for You
-                </Text>
+            <View style={{ marginTop: Sizes.fixPadding, marginBottom: Sizes.fixPadding / 2.0 }}>
+                <View style={{ marginHorizontal: Sizes.fixPadding * 2.0, alignItems: 'center', marginBottom: Sizes.fixPadding }}>
+                    <Text style={{ ...Fonts.blackColor18SemiBold, fontSize: 19.0, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 2.0 }}>
+                        DP SIGNATURE
+                    </Text>
+                    <Text style={{ ...Fonts.blackColor14Medium, fontSize: 12.0, lineHeight: 14.0, textAlign: 'center', fontStyle: 'italic', letterSpacing: 0.5, marginBottom: 2.0 }}>
+                        Handpicked designs for your unique glow
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', width: '75%', marginTop: 2.0 }}>
+                        <View style={{ flex: 1, height: 1.5, backgroundColor: '#9E9E9E' }} />
+                        <Image
+                            source={require('../../../assets/images/icon.png')}
+                            style={{ width: 35.0, height: 35.0, resizeMode: 'contain', marginHorizontal: Sizes.fixPadding - 5.0 }}
+                        />
+                        <View style={{ flex: 1, height: 1.5, backgroundColor: '#9E9E9E' }} />
+                    </View>
+                </View>
                 <FlatList
                     data={productsWithFavorites}
                     keyExtractor={(item) => `${item.productId}`}
@@ -222,7 +261,7 @@ const HomeScreen = () => {
                         />
                     )}
                     horizontal
-                    contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding + 3.0 }}
+                    contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, paddingTop: Sizes.fixPadding }}
                     showsHorizontalScrollIndicator={false}
                 />
             </View>
@@ -264,6 +303,7 @@ const HomeScreen = () => {
 
     function banners() {
         if (!bannerData || bannerData.length === 0) return null;
+
         const handleBannerPress = (item) => {
             if (item.linkType === 'category' && item.linkTarget) {
                 navigation.push('categoryWiseProducts/categoryWiseProductsScreen', { category: item.linkTarget });
@@ -271,41 +311,83 @@ const HomeScreen = () => {
                 navigation.navigate('search/searchScreen');
             }
         };
+
+        const itemWidth = Screen.width;
+        const cardWidth = Screen.width - 40.0;
+        const itemHeight = 290.0;
+
         const renderItem = ({ item }) => (
-            <ImageBackground
-                source={{ uri: item.imageUrl }}
-                style={{ width: Screen.width - 60, height: 155.0, marginHorizontal: Sizes.fixPadding, }}
-                borderRadius={Sizes.fixPadding}
-            >
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.20)', flex: 1, padding: Sizes.fixPadding * 2.0 }}>
-                    <Text
-                        numberOfLines={2}
-                        style={{ ...Fonts.whiteColor22Bold, lineHeight: 26.0, paddingTop: Sizes.fixPadding - 5.0 }}
-                    >
-                        {item.title}
-                    </Text>
-                    <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() => handleBannerPress(item)}
-                        style={styles.getNowButtonStyle}
-                    >
-                        <Text style={{ ...Fonts.blackColor15Medium }}>
-                            Shop Now
+            <View style={{ width: itemWidth, height: itemHeight, alignItems: 'center' }}>
+                <ImageBackground
+                    source={{ uri: item.imageUrl }}
+                    style={{ width: cardWidth, height: itemHeight }}
+                    borderRadius={Sizes.fixPadding}
+                >
+                    <View style={{
+                        flex: 1,
+                        backgroundColor: 'rgba(0,0,0,0.35)', // Dark overlay for text visibility
+                        borderRadius: Sizes.fixPadding,
+                        justifyContent: 'flex-end',
+                        paddingHorizontal: Sizes.fixPadding * 2.0,
+                        paddingBottom: Sizes.fixPadding * 2.0
+                    }}>
+                        <Text
+                            numberOfLines={2}
+                            style={{ ...Fonts.whiteColor22Bold, lineHeight: 30.0, marginBottom: Sizes.fixPadding, textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: { width: -1, height: 1 }, textShadowRadius: 10 }}
+                        >
+                            {item.title}
                         </Text>
-                    </TouchableOpacity>
-                </View>
-            </ImageBackground>
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => handleBannerPress(item)}
+                            style={{
+                                backgroundColor: Colors.whiteColor,
+                                paddingVertical: Sizes.fixPadding - 5.0,
+                                paddingHorizontal: Sizes.fixPadding * 2.0,
+                                borderRadius: 30.0,
+                                alignSelf: 'flex-start',
+                                marginBottom: Sizes.fixPadding
+                            }}
+                        >
+                            <Text style={{ ...Fonts.blackColor15Medium, letterSpacing: 0.5 }}>
+                                SHOP NOW
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </ImageBackground>
+            </View>
         )
+
         return (
-            <View style={{ marginVertical: Sizes.fixPadding * 2.0, }}>
+            <View>
                 <FlatList
+                    ref={flatListRef}
                     data={bannerData}
                     keyExtractor={(item) => `${item.id}`}
                     renderItem={renderItem}
                     horizontal
-                    contentContainerStyle={{ paddingHorizontal: Sizes.fixPadding, }}
                     showsHorizontalScrollIndicator={false}
+                    snapToInterval={itemWidth}
+                    decelerationRate="fast"
+                    pagingEnabled
+                    snapToAlignment="center"
+                    onViewableItemsChanged={onViewableItemsChanged}
+                    viewabilityConfig={viewabilityConfig}
                 />
+                <View style={{ flexDirection: 'row', position: 'absolute', bottom: 10, alignSelf: 'center' }}>
+                    {bannerData.map((_, index) => (
+                        <View
+                            key={index}
+                            style={{
+                                width: index === currentIndex ? 20.0 : 8.0,
+                                height: 8.0,
+                                borderRadius: 4.0,
+                                backgroundColor: index === currentIndex ? Colors.whiteColor : 'rgba(255, 255, 255, 0.5)',
+                                marginHorizontal: 4.0
+                            }}
+                        />
+                    ))}
+                </View>
             </View>
         )
     }
@@ -345,7 +427,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: Sizes.fixPadding * 2.0,
         borderRadius: Sizes.fixPadding - 5.0,
         alignSelf: 'flex-start',
-        marginTop: Sizes.fixPadding * 1.5,
     },
     categoryWiseItemWrapStyle: {
         borderColor: Colors.offWhiteColor,

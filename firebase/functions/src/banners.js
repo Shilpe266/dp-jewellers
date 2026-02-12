@@ -6,6 +6,7 @@ const { logActivity } = require("./activityLog");
 const db = admin.firestore();
 const BANNERS = "banners";
 const PRODUCTS = "products";
+const CUSTOM_COLLECTIONS = "customCollections";
 const MAX_BANNERS = 5;
 
 // Verify admin access with managePromotions permission
@@ -59,7 +60,16 @@ exports.listBanners = onCall({ region: "asia-south1" }, async (request) => {
 
   const categories = Array.from(categoriesSet).sort();
 
-  return { banners, categories };
+  // Also fetch active custom collections for banner linking
+  const collectionsSnapshot = await db.collection(CUSTOM_COLLECTIONS)
+    .where("isActive", "==", true)
+    .get();
+
+  const customCollections = collectionsSnapshot.docs
+    .map((doc) => ({ id: doc.id, name: doc.data().name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { banners, categories, customCollections };
 });
 
 /**
@@ -74,12 +84,16 @@ exports.saveBanner = onCall({ region: "asia-south1" }, async (request) => {
     throw new HttpsError("invalid-argument", "Title and image are required.");
   }
 
-  if (!linkType || !["category", "search"].includes(linkType)) {
-    throw new HttpsError("invalid-argument", "Link type must be 'category' or 'search'.");
+  if (!linkType || !["category", "search", "custom_collection"].includes(linkType)) {
+    throw new HttpsError("invalid-argument", "Link type must be 'category', 'search', or 'custom_collection'.");
   }
 
   if (linkType === "category" && !linkTarget) {
     throw new HttpsError("invalid-argument", "Category is required when link type is 'category'.");
+  }
+
+  if (linkType === "custom_collection" && !linkTarget) {
+    throw new HttpsError("invalid-argument", "Collection is required when link type is 'custom_collection'.");
   }
 
   const order = Number(displayOrder) || 1;
@@ -99,7 +113,7 @@ exports.saveBanner = onCall({ region: "asia-south1" }, async (request) => {
     title,
     imageUrl,
     linkType,
-    linkTarget: linkType === "category" ? linkTarget : "",
+    linkTarget: linkType !== "search" ? linkTarget : "",
     displayOrder: order,
     isActive: isActive !== false,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),

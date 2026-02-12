@@ -50,6 +50,7 @@ const emptyForm = {
 export default function BannersPage() {
   const [banners, setBanners] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [customCollections, setCustomCollections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
@@ -71,6 +72,7 @@ export default function BannersPage() {
       const result = await listBanners();
       setBanners(result.data.banners || []);
       setCategories(result.data.categories || []);
+      setCustomCollections(result.data.customCollections || []);
     } catch (err) {
       console.error('Error fetching banners:', err);
       setError('Failed to load banners: ' + (err.message || ''));
@@ -139,6 +141,10 @@ export default function BannersPage() {
     }
     if (formData.linkType === 'category' && !formData.linkTarget) {
       setError('Please select a category.');
+      return;
+    }
+    if (formData.linkType === 'custom_collection' && !formData.linkTarget) {
+      setError('Please select a collection.');
       return;
     }
 
@@ -220,11 +226,14 @@ export default function BannersPage() {
       headerName: 'Link',
       width: 150,
       sortable: true,
-      renderCell: (params) => (
-        <Typography variant="body2">
-          {params.row.linkType === 'category' ? params.row.linkTarget : 'Search Page'}
-        </Typography>
-      ),
+      renderCell: (params) => {
+        if (params.row.linkType === 'category') return <Typography variant="body2">{params.row.linkTarget}</Typography>;
+        if (params.row.linkType === 'custom_collection') {
+          const col = customCollections.find((c) => c.id === params.row.linkTarget);
+          return <Typography variant="body2">{col ? col.name : params.row.linkTarget}</Typography>;
+        }
+        return <Typography variant="body2">Search Page</Typography>;
+      },
     },
     { field: 'displayOrder', headerName: 'Order', width: 80, sortable: true },
     {
@@ -377,6 +386,7 @@ export default function BannersPage() {
                 sx={{ minWidth: 200 }}
               >
                 <MenuItem value="category">Category Page</MenuItem>
+                <MenuItem value="custom_collection">Custom Collection</MenuItem>
                 <MenuItem value="search">Search Page</MenuItem>
               </TextField>
             </Grid>
@@ -395,6 +405,28 @@ export default function BannersPage() {
                   {categories.map((cat) => (
                     <MenuItem key={cat} value={cat}>{cat}</MenuItem>
                   ))}
+                </TextField>
+              </Grid>
+            )}
+            {formData.linkType === 'custom_collection' && (
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  select
+                  label="Select Collection"
+                  required
+                  sx={{ minWidth: 200 }}
+                  value={formData.linkTarget}
+                  onChange={(e) => setFormData({ ...formData, linkTarget: e.target.value })}
+                >
+                  {customCollections.length === 0 ? (
+                    <MenuItem disabled value="">No active collections found</MenuItem>
+                  ) : (
+                    customCollections.map((col) => (
+                      <MenuItem key={col.id} value={col.id}>{col.name}</MenuItem>
+                    ))
+                  )}
                 </TextField>
               </Grid>
             )}

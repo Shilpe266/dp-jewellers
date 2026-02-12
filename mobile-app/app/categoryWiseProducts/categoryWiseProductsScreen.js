@@ -15,6 +15,8 @@ const CategoryWiseProductsScreen = () => {
     const router = useRouter();
     const params = useLocalSearchParams();
     const categoryName = params?.category ? String(params.category) : 'Rings';
+    const collectionId = params?.collectionId ? String(params.collectionId) : null;
+    const collectionName = params?.collectionName ? String(params.collectionName) : null;
 
     const [items, setitems] = useState([]);
     const [loading, setloading] = useState(true);
@@ -50,17 +52,24 @@ const CategoryWiseProductsScreen = () => {
             setloading(true);
             seterrorText('');
             try {
-                const getProductsByCategory = httpsCallable(functions, 'getProductsByCategory');
-                const res = await getProductsByCategory({
-                    category: categoryName,
-                    material: filters.material || undefined,
-                    purity: filters.purity || undefined,
-                    goldColor: filters.goldColor || undefined,
-                    diamond: filters.diamond || undefined,
-                    minPrice: filters.minPrice ? Number(filters.minPrice) : undefined,
-                    maxPrice: filters.maxPrice ? Number(filters.maxPrice) : undefined,
-                });
-                const products = res?.data?.products || [];
+                let products = [];
+                if (collectionId) {
+                    const getCustomCollectionProducts = httpsCallable(functions, 'getCustomCollectionProducts');
+                    const res = await getCustomCollectionProducts({ collectionId });
+                    products = res?.data?.products || [];
+                } else {
+                    const getProductsByCategory = httpsCallable(functions, 'getProductsByCategory');
+                    const res = await getProductsByCategory({
+                        category: categoryName,
+                        material: filters.material || undefined,
+                        purity: filters.purity || undefined,
+                        goldColor: filters.goldColor || undefined,
+                        diamond: filters.diamond || undefined,
+                        minPrice: filters.minPrice ? Number(filters.minPrice) : undefined,
+                        maxPrice: filters.maxPrice ? Number(filters.maxPrice) : undefined,
+                    });
+                    products = res?.data?.products || [];
+                }
                 if (active) {
                     setitems(products);
                 }
@@ -75,7 +84,7 @@ const CategoryWiseProductsScreen = () => {
         };
         fetchProducts();
         return () => { active = false; };
-    }, [categoryName, filters.material, filters.purity, filters.goldColor, filters.diamond, filters.minPrice, filters.maxPrice]);
+    }, [collectionId, categoryName, filters.material, filters.purity, filters.goldColor, filters.diamond, filters.minPrice, filters.maxPrice]);
 
     const handleShowSnackBar = (text) => {
         setSnackText(text);
@@ -153,25 +162,35 @@ const CategoryWiseProductsScreen = () => {
                     color={Colors.blackColor}
                     onPress={() => { navigation.canGoBack() ? navigation.goBack() : router.replace('/(tabs)/home/homeScreen') }}
                 />
-                <TouchableOpacity onPress={() => router.replace('/(tabs)/home/homeScreen')} activeOpacity={0.7} style={{ flex: 1, alignItems: 'center' }}>
-                    <Image source={require('../../assets/images/dp-logo-02.png')} style={styles.headerLogo} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => {
-                        navigation.push('filter/filterScreen', {
-                            category: categoryName,
-                            material: filters.material || '',
-                            purity: filters.purity || '',
-                            goldColor: filters.goldColor || '',
-                            diamond: filters.diamond || '',
-                            minPrice: filters.minPrice || '',
-                            maxPrice: filters.maxPrice || '',
-                        })
-                    }}
-                >
-                    <Feather name="sliders" size={20} color={Colors.blackColor} />
-                </TouchableOpacity>
+                {collectionId ? (
+                    <Text numberOfLines={1} style={[styles.headerTitle, { textAlign: 'center' }]}>
+                        {collectionName || 'Collection'}
+                    </Text>
+                ) : (
+                    <TouchableOpacity onPress={() => router.replace('/(tabs)/home/homeScreen')} activeOpacity={0.7} style={{ flex: 1, alignItems: 'center' }}>
+                        <Image source={require('../../assets/images/dp-logo-02.png')} style={styles.headerLogo} />
+                    </TouchableOpacity>
+                )}
+                {collectionId ? (
+                    <View style={{ width: 26 }} />
+                ) : (
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => {
+                            navigation.push('filter/filterScreen', {
+                                category: categoryName,
+                                material: filters.material || '',
+                                purity: filters.purity || '',
+                                goldColor: filters.goldColor || '',
+                                diamond: filters.diamond || '',
+                                minPrice: filters.minPrice || '',
+                                maxPrice: filters.maxPrice || '',
+                            })
+                        }}
+                    >
+                        <Feather name="sliders" size={20} color={Colors.blackColor} />
+                    </TouchableOpacity>
+                )}
             </View>
         )
     }

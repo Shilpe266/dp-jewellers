@@ -104,6 +104,15 @@ exports.saveBanner = banners.saveBanner;
 exports.deleteBanner = banners.deleteBanner;
 
 // ============================================
+// CUSTOM COLLECTION FUNCTIONS
+// ============================================
+const customCollections = require("./src/customCollections");
+exports.listCustomCollections = customCollections.listCustomCollections;
+exports.saveCustomCollection = customCollections.saveCustomCollection;
+exports.deleteCustomCollection = customCollections.deleteCustomCollection;
+exports.getCustomCollectionProducts = customCollections.getCustomCollectionProducts;
+
+// ============================================
 // STORE FUNCTIONS
 // ============================================
 const stores = require("./src/stores");

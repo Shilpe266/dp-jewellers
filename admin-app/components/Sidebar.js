@@ -29,6 +29,7 @@ import {
   ViewCarousel,
   PendingActions,
   History,
+  Collections,
 } from '@mui/icons-material';
 import { signOut } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -44,6 +45,7 @@ const menuItems = [
   { text: 'Products', icon: <Inventory />, path: '/dashboard/products', roles: ['super_admin', 'admin', 'editor'], permission: 'manageProducts' },
   { text: 'Orders', icon: <ShoppingCart />, path: '/dashboard/orders', roles: ['super_admin', 'admin'], permission: 'manageOrders' },
   { text: 'Banners', icon: <ViewCarousel />, path: '/dashboard/banners', roles: ['super_admin', 'admin'], permission: 'managePromotions' },
+  { text: 'Collections', icon: <Collections />, path: '/dashboard/collections', roles: ['super_admin', 'admin'], permission: 'managePromotions' },
   { text: 'Approvals', icon: <PendingActions />, path: '/dashboard/approvals', roles: ['super_admin'] },
   { text: 'Stores', icon: <Store />, path: '/dashboard/stores', roles: ['super_admin'] },
   { text: 'Users', icon: <People />, path: '/dashboard/users', roles: ['super_admin'], permission: 'manageUsers' },

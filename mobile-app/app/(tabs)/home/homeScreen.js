@@ -307,6 +307,8 @@ const HomeScreen = () => {
         const handleBannerPress = (item) => {
             if (item.linkType === 'category' && item.linkTarget) {
                 navigation.push('categoryWiseProducts/categoryWiseProductsScreen', { category: item.linkTarget });
+            } else if (item.linkType === 'custom_collection' && item.linkTarget) {
+                navigation.push('categoryWiseProducts/categoryWiseProductsScreen', { collectionId: item.linkTarget, collectionName: item.title });
             } else {
                 navigation.navigate('search/searchScreen');
             }

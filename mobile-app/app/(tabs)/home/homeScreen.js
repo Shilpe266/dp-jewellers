@@ -399,6 +399,13 @@ const HomeScreen = () => {
                     <Image source={require('../../../assets/images/dp-logo-02.png')} style={styles.headerLogo} />
                 </TouchableOpacity>
                 <View style={{ flex: 1 }} />
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => navigation.push('metalRates/metalRatesScreen')}
+                    style={styles.headerPriceBtn}
+                >
+                    <Text style={styles.headerPriceText}>View Price</Text>
+                </TouchableOpacity>
                 <Feather name="search" size={22} color={Colors.blackColor} onPress={() => { navigation.navigate('search/searchScreen') }} />
             </View>
         )
@@ -420,6 +427,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderBottomColor: Colors.offWhiteColor,
         borderBottomWidth: 1.0
+    },
+    headerPriceBtn: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: Colors.offWhiteColor,
+        marginRight: Sizes.fixPadding,
+    },
+    headerPriceText: {
+        ...Fonts.blackColor14Medium,
     },
     getNowButtonStyle: {
         backgroundColor: Colors.whiteColor,
